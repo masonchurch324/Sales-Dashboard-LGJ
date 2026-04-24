@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Closer Leaderboard — Jay Sales OS</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg-elevated: #141821;
+    --bg-card: #1a1f2e;
+    --border: #232a3d;
+    --text: #e6e9ef;
+    --text-dim: #8a93a6;
+    --accent: #00d084;
+    --accent-dim: #00a36a;
+    --danger: #ff4d6d;
+    --gold: #ffd700;
+    --silver: #c0c0c0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 32px 24px;
+    min-height: 100vh;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+  .subtitle { color: var(--text-dim); font-size: 14px; margin-top: 4px; }
+  .header-actions { display: flex; gap: 12px; align-items: center; }
+  .updated { font-size: 12px; color: var(--text-dim); }
+  .refresh-btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 9px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.15s;
+  }
+  .refresh-btn:hover { background: var(--accent-dim); }
+
+  .controls {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .preset-btn {
+    background: var(--bg-card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .preset-btn:hover { border-color: var(--accent); }
+  .preset-btn.active {
+    background: var(--accent);
+    color: #000;
+    border-color: var(--accent);
+  }
+  .custom-range {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin-left: 8px;
+  }
+  .custom-range.visible { display: flex; }
+  .custom-range input {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    color-scheme: dark;
+  }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 12px;
+  }
+
+  .team-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+  .kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .kpi-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+  .kpi-value {
+    font-size: 30px;
+    font-weight: 700;
+    font-feature-settings: 'tnum';
+    letter-spacing: -0.02em;
+  }
+  .kpi-value.accent { color: var(--accent); }
+
+  .table-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  thead { background: var(--bg-elevated); }
+  th, td {
+    padding: 14px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  th:hover { color: var(--text); }
+  th[data-sort]::after { content: ' ⇅'; opacity: 0.3; font-size: 10px; }
+  th.sort-asc::after { content: ' ↑'; opacity: 1; color: var(--accent); }
+  th.sort-desc::after { content: ' ↓'; opacity: 1; color: var(--accent); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  td { font-size: 14px; font-feature-settings: 'tnum'; }
+  td.rep-name { font-weight: 600; font-size: 15px; }
+  .medal { margin-right: 6px; }
+
+  .status {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 40px;
+    border-radius: 12px;
+    font-size: 14px;
+    text-align: center;
+    color: var(--text-dim);
+  }
+  .status.error {
+    background: rgba(255,77,109,0.08);
+    color: var(--danger);
+    border-color: rgba(255,77,109,0.3);
+  }
+
+  .footnote {
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: center;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab-btn {
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab-panel.hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>Closer Leaderboard</h1>
+      <div class="subtitle" id="subtitle">Loading…</div>
+    </div>
+    <div class="header-actions">
+      <span class="updated" id="updated"></span>
+      <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="weekly">Weekly</button>
+  </div>
+
+  <div class="tab-panel" data-panel="overview">
+    <div class="controls">
+      <button class="preset-btn active" data-preset="mtd">MTD</button>
+      <button class="preset-btn" data-preset="last-month">Last Month</button>
+      <button class="preset-btn" data-preset="last-7">Last 7 Days</button>
+      <button class="preset-btn" data-preset="last-30">Last 30 Days</button>
+      <button class="preset-btn" data-preset="ytd">YTD</button>
+      <button class="preset-btn" data-preset="custom">Custom</button>
+      <div class="custom-range" id="customRange">
+        <input type="date" id="startDate">
+        <span style="color:var(--text-dim)">→</span>
+        <input type="date" id="endDate">
+      </div>
+    </div>
+
+    <div id="content">
+      <div class="status">Loading sales data…</div>
+    </div>
+  </div>
+
+  <div class="tab-panel hidden" data-panel="weekly">
+    <div id="weeklyContent">
+      <div class="status">Loading weekly data…</div>
+    </div>
+  </div>
+
+  <div class="footnote">Live data from Airtable · Jay Sales OS · All reps</div>
+</div>
+
+<script>
+// Data is proxied through /api/airtable — token lives server-side only.
+
+const FIELDS = {
+  date: 'Date 📅',
+  rep: 'Sales Rep 🧑‍💼',
+  slotsOpen: 'Slots Open',
+  scheduled: 'Scheduled Calls 📅',
+  live: 'Live Calls ☎️',
+  units: 'Units Sold 🧍‍♂️',
+  contract: 'Contract Value (Closer) 💰',
+  cash: 'Cash Collected (Closer) 💰',
+  dials: 'Dials',
+  pickups: 'Pickups',
+  phoneSets: 'Phone Sets',
+  dmSets: 'DM Sets'
+};
+
+let allRecords = [];
+let currentRange = getMTDRange();
+let sortKey = 'contract';
+let sortDir = 'desc';
+
+function fmtDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function fmtDateDisplay(d) {
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function fmtCurrency(n) {
+  return '$' + Math.round(n || 0).toLocaleString();
+}
+function fmtPct(n) {
+  if (!isFinite(n) || isNaN(n)) return '—';
+  return (n * 100).toFixed(1) + '%';
+}
+
+function getMTDRange() {
+  const now = new Date();
+  return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now };
+}
+function getLastMonthRange() {
+  const now = new Date();
+  return {
+    start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+    end: new Date(now.getFullYear(), now.getMonth(), 0)
+  };
+}
+function getLastNDaysRange(n) {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - n + 1);
+  return { start, end };
+}
+function getYTDRange() {
+  const now = new Date();
+  return { start: new Date(now.getFullYear(), 0, 1), end: now };
+}
+
+async function fetchAllRecords() {
+  const records = [];
+  let offset;
+  do {
+    const params = new URLSearchParams();
+    if (offset) params.set('offset', offset);
+    const res = await fetch(`/api/airtable?${params}`);
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`API ${res.status}: ${body.slice(0,150)}`);
+    }
+    const data = await res.json();
+    records.push(...data.records);
+    offset = data.offset;
+  } while (offset);
+  return records;
+}
+
+function repName(val) {
+  if (!val) return null;
+  return typeof val === 'string' ? val : val.name;
+}
+
+function blankTotals(label) {
+  return { rep: label, slotsOpen: 0, scheduled: 0, live: 0, units: 0, contract: 0, cash: 0, dials: 0, pickups: 0, phoneSets: 0, dmSets: 0 };
+}
+
+function filterAndAggregate(range) {
+  const r = range || currentRange;
+  const startStr = fmtDate(r.start);
+  const endStr = fmtDate(r.end);
+
+  const filtered = allRecords.filter(rec => {
+    const f = rec.fields;
+    const date = f[FIELDS.date];
+    const rep = repName(f[FIELDS.rep]);
+    if (!date || !rep) return false;
+    return date >= startStr && date <= endStr;
+  });
+
+  const byRep = {};
+  for (const rec of filtered) {
+    const f = rec.fields;
+    const rep = repName(f[FIELDS.rep]);
+    if (!byRep[rep]) byRep[rep] = blankTotals(rep);
+    const b = byRep[rep];
+    b.slotsOpen += f[FIELDS.slotsOpen] || 0;
+    b.scheduled += f[FIELDS.scheduled] || 0;
+    b.live += f[FIELDS.live] || 0;
+    b.units += f[FIELDS.units] || 0;
+    b.contract += f[FIELDS.contract] || 0;
+    b.cash += f[FIELDS.cash] || 0;
+    b.dials += f[FIELDS.dials] || 0;
+    b.pickups += f[FIELDS.pickups] || 0;
+    b.phoneSets += f[FIELDS.phoneSets] || 0;
+    b.dmSets += f[FIELDS.dmSets] || 0;
+  }
+  for (const rep in byRep) {
+    const b = byRep[rep];
+    b.fillRate = b.slotsOpen ? b.scheduled / b.slotsOpen : 0;
+    b.showRate = b.scheduled ? b.live / b.scheduled : 0;
+    b.closeRate = b.live ? b.units / b.live : 0;
+    b.revPerCall = b.scheduled ? b.contract / b.scheduled : 0;
+    b.pickupRate = b.dials ? b.pickups / b.dials : 0;
+  }
+
+  const team = blankTotals('Team');
+  for (const rep in byRep) {
+    const b = byRep[rep];
+    team.slotsOpen += b.slotsOpen;
+    team.scheduled += b.scheduled;
+    team.live += b.live;
+    team.units += b.units;
+    team.contract += b.contract;
+    team.cash += b.cash;
+    team.dials += b.dials;
+    team.pickups += b.pickups;
+    team.phoneSets += b.phoneSets;
+    team.dmSets += b.dmSets;
+  }
+  team.fillRate = team.slotsOpen ? team.scheduled / team.slotsOpen : 0;
+  team.showRate = team.scheduled ? team.live / team.scheduled : 0;
+  team.closeRate = team.live ? team.units / team.live : 0;
+  team.revPerCall = team.scheduled ? team.contract / team.scheduled : 0;
+  team.pickupRate = team.dials ? team.pickups / team.dials : 0;
+
+  return { reps: Object.values(byRep), team, rowCount: filtered.length };
+}
+
+function render() {
+  const { reps, team, rowCount } = filterAndAggregate();
+
+  document.getElementById('subtitle').textContent =
+    `${fmtDateDisplay(currentRange.start)} → ${fmtDateDisplay(currentRange.end)}  ·  ${rowCount} EOD report${rowCount===1?'':'s'}`;
+
+  const teamHtml = `
+    <div class="section-title">Team Totals</div>
+    <div class="team-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Slots Open</div>
+        <div class="kpi-value">${team.slotsOpen.toLocaleString()}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Scheduled Calls</div>
+        <div class="kpi-value">${team.scheduled.toLocaleString()}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Fill Rate</div>
+        <div class="kpi-value">${fmtPct(team.fillRate)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Show Rate</div>
+        <div class="kpi-value">${fmtPct(team.showRate)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Close Rate</div>
+        <div class="kpi-value">${fmtPct(team.closeRate)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Units Sold</div>
+        <div class="kpi-value">${team.units}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Contract Value</div>
+        <div class="kpi-value accent">${fmtCurrency(team.contract)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">New Cash Collected</div>
+        <div class="kpi-value accent">${fmtCurrency(team.cash)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Revenue / Call</div>
+        <div class="kpi-value">${fmtCurrency(team.revPerCall)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Dials</div>
+        <div class="kpi-value">${team.dials.toLocaleString()}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Pickups</div>
+        <div class="kpi-value">${team.pickups.toLocaleString()}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Pickup Rate</div>
+        <div class="kpi-value">${fmtPct(team.pickupRate)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Phone Sets</div>
+        <div class="kpi-value">${team.phoneSets.toLocaleString()}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">DM Sets</div>
+        <div class="kpi-value">${team.dmSets.toLocaleString()}</div>
+      </div>
+    </div>
+  `;
+
+  const sorted = [...reps].sort((a, b) => {
+    const av = a[sortKey] || 0;
+    const bv = b[sortKey] || 0;
+    return sortDir === 'desc' ? bv - av : av - bv;
+  });
+
+  const kpis = ['slotsOpen', 'scheduled', 'fillRate', 'showRate', 'closeRate', 'units', 'contract', 'cash', 'dials', 'pickups', 'phoneSets', 'dmSets'];
+  const ranks = {};
+  for (const k of kpis) {
+    const sortedByK = [...reps].sort((a,b) => (b[k]||0) - (a[k]||0));
+    ranks[k] = {};
+    sortedByK.forEach((r, i) => { ranks[k][r.rep] = i + 1; });
+  }
+  function medal(rank, val) {
+    if (!val) return '';
+    if (rank === 1) return '<span class="medal">🥇</span>';
+    return '';
+  }
+
+  const rowsHtml = sorted.map(r => `
+    <tr>
+      <td class="rep-name">${r.rep}</td>
+      <td>${r.slotsOpen.toLocaleString()}</td>
+      <td>${r.scheduled.toLocaleString()}</td>
+      <td>${fmtPct(r.fillRate)}</td>
+      <td>${fmtPct(r.showRate)}</td>
+      <td>${fmtPct(r.closeRate)}</td>
+      <td>${medal(ranks.units[r.rep], r.units)}${r.units}</td>
+      <td>${medal(ranks.contract[r.rep], r.contract)}${fmtCurrency(r.contract)}</td>
+      <td>${fmtCurrency(r.cash)}</td>
+      <td>${fmtCurrency(r.revPerCall)}</td>
+      <td>${r.dials.toLocaleString()}</td>
+      <td>${r.pickups.toLocaleString()}</td>
+      <td>${r.phoneSets.toLocaleString()}</td>
+      <td>${r.dmSets.toLocaleString()}</td>
+    </tr>
+  `).join('');
+
+  function thClass(key) {
+    return sortKey === key ? `sort-${sortDir}` : '';
+  }
+
+  const tableHtml = `
+    <div class="section-title">Leaderboard</div>
+    <div class="table-wrap"><table>
+      <thead>
+        <tr>
+          <th>Rep</th>
+          <th class="${thClass('slotsOpen')}" data-sort="slotsOpen">Slots Open</th>
+          <th class="${thClass('scheduled')}" data-sort="scheduled">Scheduled Calls</th>
+          <th class="${thClass('fillRate')}" data-sort="fillRate">Fill Rate</th>
+          <th class="${thClass('showRate')}" data-sort="showRate">Show Rate</th>
+          <th class="${thClass('closeRate')}" data-sort="closeRate">Close Rate</th>
+          <th class="${thClass('units')}" data-sort="units">Units Sold</th>
+          <th class="${thClass('contract')}" data-sort="contract">Contract Value</th>
+          <th class="${thClass('cash')}" data-sort="cash">New Cash</th>
+          <th class="${thClass('revPerCall')}" data-sort="revPerCall">Revenue / Call</th>
+          <th class="${thClass('dials')}" data-sort="dials">Dials</th>
+          <th class="${thClass('pickups')}" data-sort="pickups">Pickups</th>
+          <th class="${thClass('phoneSets')}" data-sort="phoneSets">Phone Sets</th>
+          <th class="${thClass('dmSets')}" data-sort="dmSets">DM Sets</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table></div>
+  `;
+
+  document.getElementById('content').innerHTML = teamHtml + tableHtml;
+
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const k = th.dataset.sort;
+      if (sortKey === k) sortDir = sortDir === 'desc' ? 'asc' : 'desc';
+      else { sortKey = k; sortDir = 'desc'; }
+      render();
+    });
+  });
+}
+
+function mondayOf(d) {
+  const out = new Date(d);
+  const day = out.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  out.setDate(out.getDate() + diff);
+  out.setHours(0, 0, 0, 0);
+  return out;
+}
+
+function getAllWeeks() {
+  let earliest = null;
+  for (const r of allRecords) {
+    const date = r.fields[FIELDS.date];
+    const rep = repName(r.fields[FIELDS.rep]);
+    if (!date || !rep) continue;
+    if (!earliest || date < earliest) earliest = date;
+  }
+  if (!earliest) return [];
+
+  const earliestDate = new Date(earliest + 'T00:00:00');
+  const firstMonday = mondayOf(earliestDate);
+  const thisMonday = mondayOf(new Date());
+  const weeks = [];
+  const cursor = new Date(firstMonday);
+  while (cursor <= thisMonday) {
+    const start = new Date(cursor);
+    const end = new Date(cursor);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    weeks.push({ start, end });
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return weeks.reverse();
+}
+
+function fmtWeekLabel(start, end) {
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+  const s = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const e = sameMonth
+    ? end.toLocaleDateString('en-US', { day: 'numeric' })
+    : end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${s} – ${e}, ${end.getFullYear()}`;
+}
+
+function renderWeekly() {
+  const weeks = getAllWeeks();
+  const todayStr = fmtDate(new Date());
+
+  const rowsHtml = weeks.map(w => {
+    const { team } = filterAndAggregate({ start: w.start, end: w.end });
+    const isCurrent = fmtDate(w.start) <= todayStr && todayStr <= fmtDate(w.end);
+    return `
+      <tr${isCurrent ? ' style="background:rgba(0,208,132,0.06);"' : ''}>
+        <td class="rep-name">${fmtWeekLabel(w.start, w.end)}${isCurrent ? ' <span style="color:var(--accent);font-size:11px;font-weight:500;margin-left:6px;">• CURRENT</span>' : ''}</td>
+        <td>${team.slotsOpen.toLocaleString()}</td>
+        <td>${team.scheduled.toLocaleString()}</td>
+        <td>${fmtPct(team.fillRate)}</td>
+        <td>${fmtPct(team.showRate)}</td>
+        <td>${fmtPct(team.closeRate)}</td>
+        <td>${team.units}</td>
+        <td>${fmtCurrency(team.contract)}</td>
+        <td>${fmtCurrency(team.cash)}</td>
+        <td>${fmtCurrency(team.revPerCall)}</td>
+        <td>${team.dials.toLocaleString()}</td>
+        <td>${team.pickups.toLocaleString()}</td>
+        <td>${fmtPct(team.pickupRate)}</td>
+        <td>${team.phoneSets.toLocaleString()}</td>
+        <td>${team.dmSets.toLocaleString()}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const tableHtml = `
+    <div class="section-title">Weekly Team Performance · All Time</div>
+    <div class="table-wrap"><table>
+      <thead>
+        <tr>
+          <th>Week (Mon–Sun)</th>
+          <th>Slots Open</th>
+          <th>Scheduled Calls</th>
+          <th>Fill Rate</th>
+          <th>Show Rate</th>
+          <th>Close Rate</th>
+          <th>Units Sold</th>
+          <th>Contract Value</th>
+          <th>New Cash</th>
+          <th>Revenue / Call</th>
+          <th>Dials</th>
+          <th>Pickups</th>
+          <th>Pickup Rate</th>
+          <th>Phone Sets</th>
+          <th>DM Sets</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table></div>
+  `;
+  document.getElementById('weeklyContent').innerHTML = tableHtml;
+}
+
+async function loadData() {
+  document.getElementById('content').innerHTML = '<div class="status">Loading sales data…</div>';
+  try {
+    allRecords = await fetchAllRecords();
+    document.getElementById('updated').textContent =
+      `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    render();
+    renderWeekly();
+  } catch (e) {
+    document.getElementById('content').innerHTML =
+      `<div class="status error">Failed to load: ${e.message}</div>`;
+  }
+}
+
+function applyPreset(preset) {
+  document.querySelectorAll('.preset-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.preset === preset);
+  });
+  document.getElementById('customRange').classList.toggle('visible', preset === 'custom');
+
+  switch (preset) {
+    case 'mtd': currentRange = getMTDRange(); break;
+    case 'last-month': currentRange = getLastMonthRange(); break;
+    case 'last-7': currentRange = getLastNDaysRange(7); break;
+    case 'last-30': currentRange = getLastNDaysRange(30); break;
+    case 'ytd': currentRange = getYTDRange(); break;
+    case 'custom': {
+      const s = document.getElementById('startDate').value;
+      const e = document.getElementById('endDate').value;
+      if (s && e) currentRange = {
+        start: new Date(s + 'T00:00:00'),
+        end: new Date(e + 'T23:59:59')
+      };
+      break;
+    }
+  }
+  if (allRecords.length) render();
+}
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+});
+document.getElementById('startDate').addEventListener('change', () => applyPreset('custom'));
+document.getElementById('endDate').addEventListener('change', () => applyPreset('custom'));
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== tab));
+  });
+});
+
+const init = getMTDRange();
+document.getElementById('startDate').value = fmtDate(init.start);
+document.getElementById('endDate').value = fmtDate(init.end);
+
+loadData();
+</script>
+</body>
+</html>
