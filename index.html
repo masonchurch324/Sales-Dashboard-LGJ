@@ -543,7 +543,7 @@ function filterAndAggregate(range) {
       }
     }
   }
-  team.contract = team.sheetContract;
+  // Contract Value stays Airtable-sourced (rep-entered SGR rollup is current truth).
   team.units = team.sheetUnits;
   team.revPerCall = team.scheduled ? team.contract / team.scheduled : 0;
   team.pickupRate = team.dials ? team.pickups / team.dials : 0;
