@@ -319,6 +319,7 @@
     <button class="tab-btn" data-tab="closers">Closers</button>
     <button class="tab-btn" data-tab="weekly">Weekly</button>
     <button class="tab-btn" data-tab="monthly">Monthly</button>
+      <button class="tab-btn" data-tab="compliance">Compliance</button>
   </div>
 
   <div class="tab-panel" data-panel="overview">
@@ -370,6 +371,12 @@
     </div>
     <div id="monthlyContent">
       <div class="status">Loading monthly data…</div>
+    </div>
+  </div>
+
+  <div class="tab-panel hidden" data-panel="compliance">
+    <div id="complianceContent">
+      <div class="status">Loading compliance data…</div>
     </div>
   </div>
 
@@ -1045,6 +1052,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== tab));
     if (tab === 'closers' && !closersLoaded) loadClosers();
+    if (tab === 'compliance' && !complianceLoaded) renderCompliance();
   });
 });
 
@@ -1136,6 +1144,202 @@ function renderClosers(data) {
     <div class="footnote">Live data from GHL · Updated ${updated}<br>Calendars: ${calList}</div>
     ${errHtml}
   `;
+}
+
+
+// ===== Compliance Tab =====
+let complianceLoaded = false;
+let complianceRangeDays = 30;
+
+function renderCompliance() {
+  complianceLoaded = true;
+  const root = document.getElementById('complianceContent');
+
+  if (typeof APPOINTMENTS === 'undefined' || !APPOINTMENTS.length) {
+    root.innerHTML = '<div class="status">No appointments data available. Run the daily refresh to populate.</div>';
+    return;
+  }
+
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - complianceRangeDays * 86400000);
+
+  // Filter to date range, exclude cancelled
+  const appts = APPOINTMENTS.filter(a => {
+    if (!a.d) return false;
+    const ad = new Date(a.d);
+    if (isNaN(ad)) return false;
+    if (ad < cutoff || ad > now) return false;
+    if (a.st === 'cancelled') return false;
+    return true;
+  });
+
+  // Find a matching post-call form for an appointment (by email + ±7 days)
+  function findFormMatch(appt) {
+    if (!appt.e) return null;
+    const apptDate = new Date(appt.d);
+    const apptMs = apptDate.getTime();
+    for (const r of SALES_TRACKING) {
+      if (!r.e || r.e !== appt.e) continue;
+      const rMs = new Date(r.d + 'T12:00:00').getTime();
+      const diffDays = Math.abs(rMs - apptMs) / 86400000;
+      if (diffDays <= 7) return r;
+    }
+    return null;
+  }
+
+  const perCloser = {};
+  const overdueList = [];
+  let teamCalls = 0, teamForms = 0, teamOverdue = 0, teamPending = 0;
+
+  for (const a of appts) {
+    const closer = a.sp || '(unassigned)';
+    if (!perCloser[closer]) perCloser[closer] = { calls: 0, forms: 0, overdue: 0, pending: 0 };
+    perCloser[closer].calls++; teamCalls++;
+
+    const apptDate = new Date(a.d);
+    const isPast = apptDate < now;
+    const form = findFormMatch(a);
+
+    if (form) {
+      perCloser[closer].forms++; teamForms++;
+    } else if (isPast) {
+      const hoursOld = (now - apptDate) / 3600000;
+      if (hoursOld >= 48) {
+        perCloser[closer].overdue++; teamOverdue++;
+        overdueList.push({ ...a, hoursOld: Math.round(hoursOld) });
+      } else {
+        perCloser[closer].pending++; teamPending++;
+      }
+    } else {
+      // future call — neither overdue nor pending counted toward compliance denominator yet
+      perCloser[closer].pending++; teamPending++;
+    }
+  }
+
+  overdueList.sort((a, b) => b.hoursOld - a.hoursOld);
+
+  const fmtCloser = sp => {
+    if (!sp || sp === '(unassigned)') return '(unassigned)';
+    return sp.charAt(0).toUpperCase() + sp.slice(1);
+  };
+  const fmtPctSafe = (n, d) => d > 0 ? (n / d * 100).toFixed(1) + '%' : '—';
+  const fmtHours = h => {
+    if (h < 24) return h + 'h';
+    const days = Math.floor(h / 24);
+    const rem = h % 24;
+    return rem ? `${days}d ${rem}h` : `${days}d`;
+  };
+  const fmtDateTime = isoStr => {
+    const d = new Date(isoStr);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  };
+
+  // Date range buttons
+  const ranges = [{label:'Last 7d',days:7},{label:'Last 14d',days:14},{label:'Last 30d',days:30},{label:'Last 60d',days:60}];
+  const rangeBtns = ranges.map(r =>
+    `<button class="preset-btn ${r.days === complianceRangeDays ? 'active' : ''}" onclick="complianceRangeDays=${r.days}; renderCompliance();">${r.label}</button>`
+  ).join('');
+
+  const teamCompliance = teamCalls - teamPending > 0 ? (teamForms / (teamCalls - teamPending) * 100).toFixed(1) : '—';
+
+  const teamHtml = `
+    <div class="controls">${rangeBtns}</div>
+    <div class="grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Calls Held (last ${complianceRangeDays}d)</div>
+        <div class="kpi-value">${teamCalls - teamPending}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Forms Submitted</div>
+        <div class="kpi-value accent">${teamForms}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Team Compliance</div>
+        <div class="kpi-value accent">${teamCompliance}${typeof teamCompliance === 'string' && teamCompliance.endsWith('%') ? '' : '%'}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Overdue (>48hr)</div>
+        <div class="kpi-value" style="color:${teamOverdue > 0 ? 'var(--danger)' : 'var(--text)'}">${teamOverdue}</div>
+      </div>
+    </div>
+  `;
+
+  // Per-closer table — only show closers with calls
+  const closerRows = Object.entries(perCloser)
+    .filter(([_, d]) => d.calls > 0)
+    .sort((a, b) => b[1].calls - a[1].calls)
+    .map(([closer, d]) => {
+      const denom = d.calls - d.pending;
+      const pct = denom > 0 ? (d.forms / denom * 100) : null;
+      const pctStr = pct === null ? '—' : pct.toFixed(1) + '%';
+      const pctColor = pct === null ? '' : (pct >= 90 ? 'var(--accent)' : pct >= 75 ? 'var(--gold)' : 'var(--danger)');
+      return `
+        <tr>
+          <td class="rep-name">${fmtCloser(closer)}</td>
+          <td>${d.calls}</td>
+          <td>${denom}</td>
+          <td>${d.forms}</td>
+          <td style="font-weight:700;color:${pctColor}">${pctStr}</td>
+          <td style="color:${d.overdue > 0 ? 'var(--danger)' : 'var(--text-dim)'}">${d.overdue}</td>
+          <td style="color:var(--text-dim)">${d.pending}</td>
+        </tr>
+      `;
+    }).join('');
+
+  const tableHtml = `
+    <div class="section-title">Per Closer</div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Closer</th>
+        <th>Total Booked</th>
+        <th>Calls Held</th>
+        <th>Forms Submitted</th>
+        <th>Compliance %</th>
+        <th>Overdue (>48hr)</th>
+        <th>Pending (<48hr or future)</th>
+      </tr></thead>
+      <tbody>${closerRows || '<tr><td colspan="7" style="text-align:center;color:var(--text-dim)">No data in this window</td></tr>'}</tbody>
+    </table></div>
+  `;
+
+  // Overdue list
+  const overdueRows = overdueList.slice(0, 100).map(a => `
+    <tr>
+      <td>${fmtDateTime(a.d)}</td>
+      <td class="rep-name">${fmtCloser(a.sp)}</td>
+      <td style="font-family:monospace;font-size:13px">${a.e || '(no email)'}</td>
+      <td style="color:var(--text-dim);font-size:13px">${a.c || ''}</td>
+      <td style="color:var(--danger);font-weight:700">${fmtHours(a.hoursOld)}</td>
+    </tr>
+  `).join('');
+
+  const overdueHtml = `
+    <div class="section-title" style="margin-top:32px">Overdue Forms (${overdueList.length})</div>
+    ${overdueList.length === 0
+      ? '<div class="status" style="color:var(--accent)">✓ No overdue forms — all calls in this window have a corresponding post-call form within 48 hours.</div>'
+      : `<div class="table-wrap"><table>
+          <thead><tr>
+            <th>Call Time</th>
+            <th>Closer</th>
+            <th>Contact Email</th>
+            <th>Calendar</th>
+            <th>Overdue By</th>
+          </tr></thead>
+          <tbody>${overdueRows}</tbody>
+        </table></div>`
+    }
+  `;
+
+  // Footnote
+  const lastDate = APPOINTMENTS.length ? APPOINTMENTS[APPOINTMENTS.length - 1].d.slice(0, 10) : '';
+  const footHtml = `
+    <div class="footnote">
+      <strong>Source of truth:</strong> Forms = Sales Call Tracking 2025 (Sales Tracking tab) · Calls = GHL appointments across 10 sales calendars · Match by client email within ±7 days of call.<br>
+      Pending = held <48hr ago (form not yet due) or future-dated. Compliance % uses calls held >48hr ago as denominator. Snapshot through ${lastDate}.
+    </div>
+  `;
+
+  root.innerHTML = teamHtml + tableHtml + overdueHtml + footHtml;
 }
 
 const init = getMTDRange();
