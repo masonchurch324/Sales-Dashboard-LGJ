@@ -320,6 +320,7 @@
     <button class="tab-btn" data-tab="weekly">Weekly</button>
     <button class="tab-btn" data-tab="monthly">Monthly</button>
       <button class="tab-btn" data-tab="compliance">Compliance</button>
+    <button class="tab-btn" data-tab="calls">Sales Call Tracking</button>
   </div>
 
   <div class="tab-panel" data-panel="overview">
@@ -377,6 +378,12 @@
   <div class="tab-panel hidden" data-panel="compliance">
     <div id="complianceContent">
       <div class="status">Loading compliance data…</div>
+    </div>
+  </div>
+
+  <div class="tab-panel hidden" data-panel="calls">
+    <div id="callsContent">
+      <div class="status">Loading sales call data…</div>
     </div>
   </div>
 
@@ -704,7 +711,13 @@ function render() {
     </table></div>
   `;
 
-  document.getElementById('content').innerHTML = teamHtml + tableHtml;
+  // Revenue pace chart — only show when current selected range covers the current month
+  // (MTD pace doesn't make sense if you're looking at last month or YTD)
+  const paceHtml = buildPaceChart();
+  document.getElementById('content').innerHTML = teamHtml + tableHtml + paceHtml;
+
+  // Render the chart canvas (must happen after innerHTML so the canvas is in the DOM)
+  setTimeout(renderPaceChart, 0);
 
   document.querySelectorAll('th[data-sort]').forEach(th => {
     th.addEventListener('click', () => {
@@ -1054,6 +1067,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== tab));
     if (tab === 'closers' && !closersLoaded) loadClosers();
     if (tab === 'compliance' && !complianceLoaded) renderCompliance();
+    if (tab === 'calls' && !callsLoaded) renderSalesCallTracking();
   });
 });
 
@@ -1145,6 +1159,279 @@ function renderClosers(data) {
     <div class="footnote">Live data from GHL · Updated ${updated}<br>Calendars: ${calList}</div>
     ${errHtml}
   `;
+}
+
+
+// ===== Sales Call Tracking Tab =====
+// Per-call view: Date | Rep | Outcome (Lead Interest from post-call form) | Fathom recording link
+let callsLoaded = false;
+let callsWindow = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+})();
+let callsRepFilter = 'all';
+
+function renderSalesCallTracking() {
+  callsLoaded = true;
+  const root = document.getElementById('callsContent');
+
+  if (typeof CALL_TRACKING === 'undefined' || !CALL_TRACKING.length) {
+    root.innerHTML = '<div class="status">No Call Tracking data available.</div>';
+    return;
+  }
+
+  // Determine window (same UX as Compliance tab)
+  let windowLabel;
+  let inWindow;
+  if (callsWindow === 'last90') {
+    const cutoff = new Date(Date.now() - 90 * 86400000);
+    windowLabel = 'last 90 days';
+    inWindow = cd => cd >= cutoff;
+  } else {
+    const [y, m] = callsWindow.split('-').map(Number);
+    const monthStart = new Date(y, m - 1, 1);
+    const monthEnd = new Date(y, m, 1);
+    windowLabel = monthStart.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    inWindow = cd => cd >= monthStart && cd < monthEnd;
+  }
+
+  // Filter calls in window — including future ones too (Mason wants the full call ledger)
+  const calls = CALL_TRACKING.filter(c => {
+    if (!c.dc) return false;
+    const cd = new Date(c.dc);
+    return !isNaN(cd) && inWindow(cd);
+  });
+
+  const reps = [...new Set(calls.map(c => c.sp || '(unassigned)'))].sort();
+  const filteredCalls = callsRepFilter === 'all'
+    ? calls
+    : calls.filter(c => (c.sp || '(unassigned)') === callsRepFilter);
+
+  // Sort newest first
+  filteredCalls.sort((a, b) => b.dc.localeCompare(a.dc));
+
+  const fmtCloser = sp => sp && sp !== '(unassigned)' ? sp.charAt(0).toUpperCase() + sp.slice(1) : '(unassigned)';
+  const fmtDateTime = isoStr => {
+    const d = new Date(isoStr);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  };
+
+  // Window selector dropdown
+  const monthsWithData = [...new Set(CALL_TRACKING.filter(c => c.dc).map(c => c.dc.slice(0, 7)))].sort().reverse();
+  const monthOpts = monthsWithData.map(ym => {
+    const [y, m] = ym.split('-').map(Number);
+    return `<option value="${ym}"${callsWindow === ym ? ' selected' : ''}>${new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })}</option>`;
+  }).join('');
+
+  const windowSelector = `
+    <div class="controls" style="margin-bottom:16px">
+      <label class="control-group">
+        <span>Window</span>
+        <select onchange="callsWindow=this.value; callsRepFilter='all'; renderSalesCallTracking();">
+          <option value="last90"${callsWindow === 'last90' ? ' selected' : ''}>Last 90 Days (rolling)</option>
+          <optgroup label="Spot-check by month">${monthOpts}</optgroup>
+        </select>
+      </label>
+    </div>
+  `;
+
+  // Rep filter buttons
+  const repBtn = (key, label, count) => `
+    <button class="preset-btn ${callsRepFilter === key ? 'active' : ''}"
+            onclick="callsRepFilter='${key}'; renderSalesCallTracking();">
+      ${label} <span style="opacity:0.7">(${count})</span>
+    </button>`;
+  const repBtns = [
+    repBtn('all', 'All', calls.length),
+    ...reps.map(r => repBtn(r, fmtCloser(r), calls.filter(c => (c.sp || '(unassigned)') === r).length))
+  ].join('');
+
+  // Build table rows
+  const rows = filteredCalls.slice(0, 500).map(c => {
+    const fathomLink = c.fl
+      ? `<a href="${c.fl}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">▶ Watch</a>`
+      : '<span style="color:var(--text-dim);font-size:12px">—</span>';
+    const outcome = c.o || '<span style="color:var(--text-dim);font-size:12px">—</span>';
+    return `
+      <tr>
+        <td>${fmtDateTime(c.dc)}</td>
+        <td class="rep-name">${fmtCloser(c.sp)}</td>
+        <td>${outcome}</td>
+        <td>${fathomLink}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const withFathom = filteredCalls.filter(c => c.fl).length;
+  const withFathomPct = filteredCalls.length ? (withFathom / filteredCalls.length * 100).toFixed(0) : 0;
+
+  const summary = `
+    <div class="grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Calls (${windowLabel})</div>
+        <div class="kpi-value">${filteredCalls.length}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">With Fathom Recording</div>
+        <div class="kpi-value accent">${withFathom}</div>
+        <div style="margin-top:6px;font-size:13px;color:var(--text-dim)">${withFathomPct}% of calls</div>
+      </div>
+    </div>
+  `;
+
+  const tableHtml = `
+    <div class="section-title">Sales Calls · ${windowLabel.charAt(0).toUpperCase() + windowLabel.slice(1)}${callsRepFilter !== 'all' ? ' · ' + fmtCloser(callsRepFilter) : ''}</div>
+    <div class="controls" style="margin-bottom:12px">${repBtns}</div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Date</th>
+        <th>Rep Name</th>
+        <th>Outcome</th>
+        <th>Fathom Link</th>
+      </tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:var(--text-dim);padding:24px">No calls in this window.</td></tr>'}</tbody>
+    </table></div>
+    ${filteredCalls.length > 500 ? `<div class="footnote">Showing first 500 of ${filteredCalls.length}. Filter by month or rep to narrow.</div>` : ''}
+    <div class="footnote">
+      <strong>Source:</strong> Sales Call Tracking 2025 (Call Tracking tab) — Date of Call · Salesperson · Lead Interest (post-call form) · Fathom share URL.<br>
+      <strong>Fathom matching:</strong> by client email + ±4 hour window. Fathom rolling 30-day window means older calls (>30 days) won't have a link even if a recording existed.
+    </div>
+  `;
+
+  root.innerHTML = windowSelector + summary + tableHtml;
+}
+
+
+// ===== Revenue Pace Chart (Overview tab, below leaderboard) =====
+// Shows current-month MTD cash with a projected line to month-end at current daily run-rate.
+let __paceChart = null;
+
+function buildPaceChart() {
+  return `
+    <div class="section-title" style="margin-top:32px">Revenue Pace · Current Month</div>
+    <div class="table-wrap" style="padding:24px">
+      <div id="paceHeadline" style="margin-bottom:16px;font-size:14px;color:var(--text-dim)"></div>
+      <canvas id="paceChart" style="max-height:320px"></canvas>
+    </div>
+  `;
+}
+
+function renderPaceChart() {
+  const canvas = document.getElementById('paceChart');
+  if (!canvas || typeof SALES_TRACKING === 'undefined') return;
+
+  const now = new Date();
+  const yr = now.getFullYear();
+  const mo = now.getMonth();  // 0-indexed
+  const monthStart = new Date(yr, mo, 1);
+  const monthEndExclusive = new Date(yr, mo + 1, 1);
+  const daysInMonth = (monthEndExclusive - monthStart) / 86400000;
+  const todayDay = now.getDate();
+  const elapsedDays = todayDay;  // includes today as a partial day; close enough for pacing
+
+  // Daily totals from SALES_TRACKING for current month (Total Cash — all rows)
+  const dailyMTD = new Array(daysInMonth).fill(0);
+  for (const r of SALES_TRACKING) {
+    if (!r.d) continue;
+    if (r.d.slice(0, 7) !== `${yr}-${String(mo + 1).padStart(2, '0')}`) continue;
+    const day = parseInt(r.d.slice(8, 10), 10);
+    if (day >= 1 && day <= daysInMonth) {
+      dailyMTD[day - 1] += r.c;
+    }
+  }
+
+  // Build cumulative MTD up to today
+  const cumActual = [];
+  let runTotal = 0;
+  for (let i = 0; i < daysInMonth; i++) {
+    if (i < elapsedDays) {
+      runTotal += dailyMTD[i];
+      cumActual.push(runTotal);
+    } else {
+      cumActual.push(null);  // future days — no actual data
+    }
+  }
+
+  const mtdTotal = cumActual[elapsedDays - 1] || 0;
+  const dailyAvg = elapsedDays > 0 ? mtdTotal / elapsedDays : 0;
+  const projection = mtdTotal + dailyAvg * (daysInMonth - elapsedDays);
+
+  // Build projected line: solid up to today, dashed extending to end of month at current run-rate
+  const projLine = [];
+  for (let i = 0; i < daysInMonth; i++) {
+    if (i < elapsedDays - 1) {
+      projLine.push(null);
+    } else if (i === elapsedDays - 1) {
+      projLine.push(mtdTotal);  // anchor at today
+    } else {
+      const daysOut = i - (elapsedDays - 1);
+      projLine.push(mtdTotal + dailyAvg * daysOut);
+    }
+  }
+
+  const labels = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const monthName = monthStart.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+  // Headline above chart
+  const headline = document.getElementById('paceHeadline');
+  if (headline) {
+    headline.innerHTML = `
+      <strong style="color:var(--text)">${monthName}</strong> ·
+      <strong style="color:var(--accent);font-size:18px">${fmtCurrency(mtdTotal)}</strong> collected so far
+      (day ${elapsedDays} of ${daysInMonth}).
+      Pacing toward
+      <strong style="color:var(--accent);font-size:18px">${fmtCurrency(projection)}</strong>
+      at current run rate of ${fmtCurrency(dailyAvg)}/day.
+    `;
+  }
+
+  if (__paceChart) __paceChart.destroy();
+  __paceChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Actual MTD',
+          data: cumActual,
+          borderColor: 'rgba(0, 208, 132, 1)',
+          backgroundColor: 'rgba(0, 208, 132, 0.15)',
+          fill: true,
+          borderWidth: 3,
+          pointRadius: 2,
+          tension: 0.2,
+          spanGaps: false
+        },
+        {
+          label: 'Projected (current pace)',
+          data: projLine,
+          borderColor: 'rgba(255, 210, 70, 0.85)',
+          borderDash: [6, 4],
+          fill: false,
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#e6e9ef', font: { size: 12 } } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: $${(ctx.parsed.y || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+            title: items => `Day ${items[0].label}`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#8a93a6' }, grid: { color: '#232a3d' }, title: { display: true, text: 'Day of month', color: '#8a93a6' } },
+        y: { ticks: { color: '#8a93a6', callback: v => '$' + v.toLocaleString() }, grid: { color: '#232a3d' } }
+      }
+    }
+  });
 }
 
 
