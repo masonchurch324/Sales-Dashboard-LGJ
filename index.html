@@ -1561,8 +1561,10 @@ function renderCompliance() {
 
   // Direct read of Call Tracking sheet — every row is one call.
   // Only count past-dated calls (future bookings can't have a form yet).
+  // Exclude synthetic Fathom-only rows (no scheduled call → no form expected).
   const calls = CALL_TRACKING.filter(c => {
     if (!c.dc) return false;
+    if (c.c === 'Fathom recording') return false;
     const cd = new Date(c.dc);
     if (isNaN(cd)) return false;
     if (cd > now) return false;
