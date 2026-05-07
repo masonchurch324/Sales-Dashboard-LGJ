@@ -320,6 +320,7 @@
     <button class="tab-btn" data-tab="monthly">Monthly</button>
     <button class="tab-btn" data-tab="compliance">Compliance</button>
     <button class="tab-btn" data-tab="calls">Sales Call Tracking</button>
+    <button class="tab-btn" data-tab="setters">Setters</button>
   </div>
 
   <div class="tab-panel" data-panel="overview">
@@ -377,6 +378,12 @@
   <div class="tab-panel hidden" data-panel="calls">
     <div id="callsContent">
       <div class="status">Loading sales call data…</div>
+    </div>
+  </div>
+
+  <div class="tab-panel hidden" data-panel="setters">
+    <div id="settersContent">
+      <div class="status">Loading setter data…</div>
     </div>
   </div>
 
@@ -516,6 +523,7 @@ function filterAndAggregate(range) {
     const b = byRep[rep];
     b.fillRate = b.slotsOpen ? b.scheduled / b.slotsOpen : 0;
     b.showRate = b.scheduled ? b.live / b.scheduled : 0;
+    b.offerRate = b.live ? b.offersMade / b.live : 0;
     b.closeRate = b.live ? b.units / b.live : 0;
     b.revPerCall = b.scheduled ? b.contract / b.scheduled : 0;
     b.pickupRate = b.dials ? b.pickups / b.dials : 0;
@@ -538,6 +546,7 @@ function filterAndAggregate(range) {
   }
   team.fillRate = team.slotsOpen ? team.scheduled / team.slotsOpen : 0;
   team.showRate = team.scheduled ? team.live / team.scheduled : 0;
+  team.offerRate = team.live ? team.offersMade / team.live : 0;
   team.closeRate = team.live ? team.units / team.live : 0;
 
   // Team-level financial metrics from Sales Tracking sheet (director's source of truth)
@@ -651,7 +660,7 @@ function render() {
     return sortDir === 'desc' ? bv - av : av - bv;
   });
 
-  const kpis = ['slotsOpen', 'scheduled', 'fillRate', 'showRate', 'closeRate', 'units', 'contract', 'cash', 'dials', 'pickups', 'phoneSets', 'dmSets'];
+  const kpis = ['slotsOpen', 'scheduled', 'live', 'offersMade', 'fillRate', 'showRate', 'offerRate', 'closeRate', 'units', 'contract', 'cash', 'dials', 'pickups', 'phoneSets', 'dmSets'];
   const ranks = {};
   for (const k of kpis) {
     const sortedByK = [...reps].sort((a,b) => (b[k]||0) - (a[k]||0));
@@ -669,8 +678,11 @@ function render() {
       <td class="rep-name">${r.rep}</td>
       <td>${r.slotsOpen.toLocaleString()}</td>
       <td>${r.scheduled.toLocaleString()}</td>
+      <td>${r.live.toLocaleString()}</td>
+      <td>${r.offersMade.toLocaleString()}</td>
       <td>${fmtPct(r.fillRate)}</td>
       <td>${fmtPct(r.showRate)}</td>
+      <td>${fmtPct(r.offerRate)}</td>
       <td>${fmtPct(r.closeRate)}</td>
       <td>${medal(ranks.units[r.rep], r.units)}${r.units}</td>
       <td>${medal(ranks.contract[r.rep], r.contract)}${fmtCurrency(r.contract)}</td>
@@ -695,8 +707,11 @@ function render() {
           <th>Rep</th>
           <th class="${thClass('slotsOpen')}" data-sort="slotsOpen">Slots Open</th>
           <th class="${thClass('scheduled')}" data-sort="scheduled">Scheduled Calls</th>
+          <th class="${thClass('live')}" data-sort="live">Live Calls</th>
+          <th class="${thClass('offersMade')}" data-sort="offersMade">Offers Made</th>
           <th class="${thClass('fillRate')}" data-sort="fillRate">Fill Rate</th>
           <th class="${thClass('showRate')}" data-sort="showRate">Show Rate</th>
+          <th class="${thClass('offerRate')}" data-sort="offerRate">Offer Rate</th>
           <th class="${thClass('closeRate')}" data-sort="closeRate">Close Rate</th>
           <th class="${thClass('units')}" data-sort="units">Units Sold</th>
           <th class="${thClass('contract')}" data-sort="contract">Contract Value</th>
@@ -1083,6 +1098,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== tab));
     if (tab === 'compliance' && !complianceLoaded) renderCompliance();
     if (tab === 'calls' && !callsLoaded) renderSalesCallTracking();
+    if (tab === 'setters') renderSetters();
   });
 });
 
@@ -1515,6 +1531,222 @@ function renderPaceChart() {
       }
     });
   }
+}
+
+
+// ===== Setters Tab =====
+// Pacing chart for Daniel's daily sets (phone + DM) toward a monthly goal.
+// Y axis = (phoneSets + dmSets) cumulative MTD. Goal pace line + current-pace projection.
+const SETTER_GOAL_KEY = 'setterGoal_v1';
+const SETTER_DEFAULT_GOAL = 120;
+const SETTER_NAME_MATCH = /^daniel\b/i;  // matches "Daniel Hussain", "Daniel", etc.
+let __setterChart = null;
+
+function getSetterGoal() {
+  try {
+    const v = Number(localStorage.getItem(SETTER_GOAL_KEY));
+    return v > 0 ? v : SETTER_DEFAULT_GOAL;
+  } catch { return SETTER_DEFAULT_GOAL; }
+}
+function setSetterGoal(v) {
+  try { localStorage.setItem(SETTER_GOAL_KEY, String(Number(v) || 0)); } catch {}
+}
+
+function renderSetters() {
+  const root = document.getElementById('settersContent');
+  if (!root) return;
+
+  if (!allRecords || !allRecords.length) {
+    root.innerHTML = '<div class="status">Loading setter data…</div>';
+    return;
+  }
+
+  const now = new Date();
+  const yr = now.getFullYear();
+  const mo = now.getMonth();
+  const monthStart = new Date(yr, mo, 1);
+  const daysInMonth = new Date(yr, mo + 1, 0).getDate();
+  const elapsedDays = now.getDate();
+  const monthName = monthStart.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+  // Sum Daniel's phone+DM sets per day-of-month for current month
+  const dailyMTD = new Array(daysInMonth).fill(0);
+  for (const r of allRecords) {
+    const f = r.fields || {};
+    const repField = f[FIELDS.rep];
+    const repName = typeof repField === 'string' ? repField : (repField && repField.name) || '';
+    if (!SETTER_NAME_MATCH.test(repName)) continue;
+    const dateStr = f[FIELDS.date];
+    if (!dateStr) continue;
+    const d = new Date(dateStr);
+    if (d.getFullYear() !== yr || d.getMonth() !== mo) continue;
+    const day = d.getDate();
+    if (day < 1 || day > daysInMonth) continue;
+    dailyMTD[day - 1] += (Number(f[FIELDS.phoneSets]) || 0) + (Number(f[FIELDS.dmSets]) || 0);
+  }
+
+  // Cumulative actual through today
+  const cumActual = [];
+  let runTotal = 0;
+  for (let i = 0; i < daysInMonth; i++) {
+    if (i < elapsedDays) { runTotal += dailyMTD[i]; cumActual.push(runTotal); }
+    else cumActual.push(null);
+  }
+  const mtdTotal = cumActual[elapsedDays - 1] || 0;
+  const dailyAvg = elapsedDays > 0 ? mtdTotal / elapsedDays : 0;
+  const projection = mtdTotal + dailyAvg * (daysInMonth - elapsedDays);
+
+  // Projection line (anchored at today)
+  const projLine = [];
+  for (let i = 0; i < daysInMonth; i++) {
+    if (i < elapsedDays - 1) projLine.push(null);
+    else if (i === elapsedDays - 1) projLine.push(mtdTotal);
+    else projLine.push(mtdTotal + dailyAvg * (i - (elapsedDays - 1)));
+  }
+
+  // Goal line: $0 day 1 → goal at last day of month
+  const goalValue = getSetterGoal();
+  const goalSlope = goalValue / (daysInMonth - 1);
+  const goalLine = Array.from({ length: daysInMonth }, (_, i) => i * goalSlope);
+
+  const labels = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const todayPace = (elapsedDays / daysInMonth) * goalValue;
+  const vsPace = mtdTotal - todayPace;
+  const vsPaceColor = vsPace >= 0 ? 'rgba(0, 208, 132, 1)' : 'rgba(255, 99, 99, 1)';
+  const vsPaceLabel = vsPace >= 0 ? 'ahead of pace' : 'behind pace';
+
+  root.innerHTML = `
+    <div class="section-title">Setters · Daniel · ${monthName}</div>
+    <div class="table-wrap" style="padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+      <div style="font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em">Monthly goal (sets by month end)</div>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em">
+        Daniel goal
+        <span style="display:inline-flex;align-items:center;gap:4px;background:#0d1220;border:1px solid #232a3d;border-radius:6px;padding:6px 10px">
+          <input type="number" min="0" step="10" id="setterGoalInput"
+                 value="${goalValue}" placeholder="120"
+                 style="background:transparent;border:0;color:var(--text);font-size:14px;font-weight:600;width:90px;outline:none;text-transform:none;letter-spacing:0" />
+          <span style="color:#8a93a6;font-size:12px">sets</span>
+        </span>
+      </label>
+      <div style="font-size:11px;color:var(--text-dim);margin-left:auto">Phone Sets + DM Sets · saved locally</div>
+    </div>
+    <div class="chart-card">
+      <div id="setterHeadline" style="margin-bottom:12px;font-size:13px;color:var(--text-dim);min-height:36px"></div>
+      <canvas id="setterChart" style="max-height:340px"></canvas>
+      <div class="chart-note">Daniel's combined Phone Sets + DM Sets, cumulative MTD with current-pace projection and goal pace line.</div>
+    </div>
+  `;
+
+  document.getElementById('setterHeadline').innerHTML = `
+    <strong style="color:var(--text)">${monthName}</strong> ·
+    <strong style="color:rgba(99, 179, 237, 1);font-size:17px">${mtdTotal}</strong> sets MTD
+    (day ${elapsedDays}/${daysInMonth}). Pacing toward
+    <strong style="color:rgba(99, 179, 237, 1);font-size:17px">${Math.round(projection)}</strong>
+    @ ${dailyAvg.toFixed(1)} sets/day. Goal:
+    <strong style="color:var(--text)">${goalValue}</strong> —
+    <strong style="color:${vsPaceColor}">${Math.abs(Math.round(vsPace))} ${vsPaceLabel}</strong>.
+  `;
+
+  document.getElementById('setterGoalInput').addEventListener('input', e => {
+    setSetterGoal(e.target.value);
+    renderSetters();
+  });
+
+  const canvas = document.getElementById('setterChart');
+  if (__setterChart) __setterChart.destroy();
+
+  const projLastIdx = projLine.length - 1;
+  const goalLastIdx = goalLine.length - 1;
+  const lastNonNullIndex = data => {
+    for (let i = data.length - 1; i >= 0; i--) if (data[i] != null) return i;
+    return -1;
+  };
+  const actualLastIdx = lastNonNullIndex(cumActual);
+
+  __setterChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Actual MTD',
+          data: cumActual,
+          borderColor: 'rgba(99, 179, 237, 1)',
+          backgroundColor: 'rgba(99, 179, 237, 0.15)',
+          fill: true,
+          borderWidth: 3,
+          pointRadius: ctx => ctx.dataIndex === actualLastIdx ? 5 : 2,
+          pointBackgroundColor: 'rgba(99, 179, 237, 1)',
+          tension: 0.2,
+          spanGaps: false,
+          datalabels: {
+            display: ctx => ctx.dataIndex === actualLastIdx,
+            color: 'rgba(99, 179, 237, 1)',
+            anchor: 'end', align: 'top', offset: 8,
+            font: { weight: 'bold', size: 12 },
+            formatter: v => Math.round(v),
+          },
+        },
+        {
+          label: 'Projected (current pace)',
+          data: projLine,
+          borderColor: 'rgba(255, 210, 70, 0.95)',
+          borderDash: [6, 4],
+          fill: false,
+          borderWidth: 2,
+          pointRadius: ctx => ctx.dataIndex === projLastIdx ? 4 : 0,
+          pointBackgroundColor: 'rgba(255, 210, 70, 1)',
+          tension: 0,
+          datalabels: {
+            display: ctx => ctx.dataIndex === projLastIdx,
+            color: 'rgba(255, 210, 70, 1)',
+            anchor: 'end', align: 'right', offset: 6,
+            font: { weight: 'bold', size: 12 },
+            formatter: v => Math.round(v),
+          },
+        },
+        {
+          label: `Goal pace (${goalValue} sets by month end)`,
+          data: goalLine,
+          borderColor: 'rgba(150, 160, 180, 0.7)',
+          borderDash: [2, 4],
+          fill: false,
+          borderWidth: 2,
+          pointRadius: ctx => ctx.dataIndex === goalLastIdx ? 4 : 0,
+          pointBackgroundColor: 'rgba(180, 190, 210, 1)',
+          tension: 0,
+          datalabels: {
+            display: ctx => ctx.dataIndex === goalLastIdx,
+            color: 'rgba(180, 190, 210, 1)',
+            anchor: 'end', align: 'right', offset: 6,
+            font: { weight: 'bold', size: 12 },
+            formatter: v => Math.round(v),
+          },
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { right: 56, top: 16 } },
+      plugins: {
+        legend: { labels: { color: '#e6e9ef', font: { size: 11 } } },
+        datalabels: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${Math.round(ctx.parsed.y || 0)} sets`,
+            title: items => `Day ${items[0].label}`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#8a93a6' }, grid: { color: '#232a3d' },
+             title: { display: true, text: 'Day of month', color: '#8a93a6' } },
+        y: { ticks: { color: '#8a93a6' }, grid: { color: '#232a3d' },
+             title: { display: true, text: 'Sets', color: '#8a93a6' } }
+      }
+    }
+  });
 }
 
 
