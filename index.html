@@ -336,6 +336,9 @@
         <span style="color:var(--text-dim)">→</span>
         <input type="date" id="endDate">
       </div>
+      <select id="repFilter" style="margin-left:auto;background:#0d1220;color:var(--text);border:1px solid #232a3d;border-radius:6px;padding:8px 12px;font-size:14px;font-weight:600;outline:none;cursor:pointer">
+        <option value="all">All reps</option>
+      </select>
     </div>
 
     <div id="content">
@@ -586,21 +589,10 @@ function render() {
   document.getElementById('subtitle').textContent =
     `${fmtDateDisplay(currentRange.start)} → ${fmtDateDisplay(currentRange.end)}  ·  ${rowCount} EOD report${rowCount===1?'':'s'}`;
 
-  // Build rep filter buttons — discover unique rep names from all records (across all dates).
-  const allRepNames = [...new Set(allRecords.map(rec => repName(rec.fields[FIELDS.rep])).filter(Boolean))].sort();
-  const firstName = full => (full || '').trim().split(/\s+/)[0] || full;
-  const repFilterHtml = `
-    <div class="controls" style="margin-bottom:16px">
-      <button class="preset-btn ${currentRepFilter === 'all' ? 'active' : ''}"
-              onclick="currentRepFilter='all'; render();">All reps</button>
-      ${allRepNames.map(rn => `
-        <button class="preset-btn ${currentRepFilter === rn ? 'active' : ''}"
-                onclick="currentRepFilter=${JSON.stringify(rn)}; render();">${firstName(rn)}</button>
-      `).join('')}
-    </div>
-  `;
+  // Sync the rep filter dropdown options to the latest record set.
+  populateRepFilterDropdown();
 
-  const teamHtml = repFilterHtml + `
+  const teamHtml = `
     <div class="team-grid team-grid-6">
       <div class="kpi-card">
         <div class="kpi-label">Slots Open</div>
@@ -1104,6 +1096,25 @@ function applyPreset(preset) {
 
 document.querySelectorAll('.preset-btn').forEach(btn => {
   btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+});
+
+function populateRepFilterDropdown() {
+  const sel = document.getElementById('repFilter');
+  if (!sel || !allRecords) return;
+  const names = [...new Set(allRecords.map(rec => repName(rec.fields[FIELDS.rep])).filter(Boolean))].sort();
+  const firstName = full => (full || '').trim().split(/\s+/)[0] || full;
+  // Only rebuild options if the set changed (avoids resetting selection)
+  const currentOptions = Array.from(sel.options).map(o => o.value).join('|');
+  const desiredOptions = ['all', ...names].join('|');
+  if (currentOptions !== desiredOptions) {
+    sel.innerHTML = '<option value="all">All reps</option>' +
+      names.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${firstName(n)}</option>`).join('');
+  }
+  sel.value = currentRepFilter;
+}
+document.getElementById('repFilter').addEventListener('change', e => {
+  currentRepFilter = e.target.value;
+  if (allRecords.length) render();
 });
 document.getElementById('startDate').addEventListener('change', () => applyPreset('custom'));
 document.getElementById('endDate').addEventListener('change', () => applyPreset('custom'));
