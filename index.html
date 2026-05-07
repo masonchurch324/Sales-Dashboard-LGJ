@@ -564,14 +564,19 @@ function filterAndAggregate(range) {
   team.newCashCollected = 0;
   team.sheetContract = 0;
   team.sheetUnits = 0;
+  // When a rep filter is active, restrict sheet rows to that rep too. The sheet's `sp`
+  // field stores the lowercase first name (e.g. "ian"), so derive that from the filter.
+  const repFirstLower = currentRepFilter !== 'all'
+    ? (currentRepFilter || '').trim().split(/\s+/)[0].toLowerCase()
+    : null;
   for (const row of SALES_TRACKING) {
-    if (row.d >= startStr && row.d <= endStr) {
-      team.totalCashCollected += row.c;
-      if (!row.pp) {
-        team.newCashCollected += row.c;
-        team.sheetContract += (row.k || 0);
-        team.sheetUnits += (row.u || 0);
-      }
+    if (row.d < startStr || row.d > endStr) continue;
+    if (repFirstLower && row.sp !== repFirstLower) continue;
+    team.totalCashCollected += row.c;
+    if (!row.pp) {
+      team.newCashCollected += row.c;
+      team.sheetContract += (row.k || 0);
+      team.sheetUnits += (row.u || 0);
     }
   }
   // Units Sold sourced from sheet (counts new-sale rows). Contract Value stays Airtable-sourced
@@ -631,7 +636,7 @@ function render() {
       </div>
       <div class="kpi-card">
         <div class="kpi-label">New Cash Collected <span style="opacity:0.6;font-weight:500;text-transform:none;letter-spacing:0;">(upfront, excl. payment-plan installments)</span></div>
-        <div class="kpi-value accent">${fmtCurrency(team.newCashCollected)}</div>
+        <div class="kpi-value accent">${fmtCurrency(team.cash)}</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Revenue / Call</div>
