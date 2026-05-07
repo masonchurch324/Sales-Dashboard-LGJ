@@ -419,6 +419,7 @@ const PRESET_STORAGE_KEY = 'lastPreset_v1';
 const _savedPreset = (() => { try { return localStorage.getItem(PRESET_STORAGE_KEY) || 'mtd'; } catch { return 'mtd'; } })();
 let currentPreset = ['mtd','last-month','last-7','last-30','ytd','custom'].includes(_savedPreset) ? _savedPreset : 'mtd';
 let currentRange = currentPreset === 'ytd' ? getYTDRange() : getMTDRange();
+let currentRepFilter = 'all';  // 'all' or full rep name (e.g. 'Tyler Hoff')
 let sortKey = 'contract';
 let sortDir = 'desc';
 
@@ -498,7 +499,9 @@ function filterAndAggregate(range) {
     const date = f[FIELDS.date];
     const rep = repName(f[FIELDS.rep]);
     if (!date || !rep) return false;
-    return date >= startStr && date <= endStr;
+    if (date < startStr || date > endStr) return false;
+    if (currentRepFilter !== 'all' && rep !== currentRepFilter) return false;
+    return true;
   });
 
   const byRep = {};
@@ -583,7 +586,21 @@ function render() {
   document.getElementById('subtitle').textContent =
     `${fmtDateDisplay(currentRange.start)} → ${fmtDateDisplay(currentRange.end)}  ·  ${rowCount} EOD report${rowCount===1?'':'s'}`;
 
-  const teamHtml = `
+  // Build rep filter buttons — discover unique rep names from all records (across all dates).
+  const allRepNames = [...new Set(allRecords.map(rec => repName(rec.fields[FIELDS.rep])).filter(Boolean))].sort();
+  const firstName = full => (full || '').trim().split(/\s+/)[0] || full;
+  const repFilterHtml = `
+    <div class="controls" style="margin-bottom:16px">
+      <button class="preset-btn ${currentRepFilter === 'all' ? 'active' : ''}"
+              onclick="currentRepFilter='all'; render();">All reps</button>
+      ${allRepNames.map(rn => `
+        <button class="preset-btn ${currentRepFilter === rn ? 'active' : ''}"
+                onclick="currentRepFilter=${JSON.stringify(rn)}; render();">${firstName(rn)}</button>
+      `).join('')}
+    </div>
+  `;
+
+  const teamHtml = repFilterHtml + `
     <div class="team-grid team-grid-6">
       <div class="kpi-card">
         <div class="kpi-label">Slots Open</div>
