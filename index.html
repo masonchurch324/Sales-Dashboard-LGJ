@@ -1602,7 +1602,10 @@ function renderSetters() {
   const elapsedDays = now.getDate();
   const monthName = monthStart.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
-  // Sum Daniel's phone+DM sets per day-of-month for current month
+  // Sum Daniel's phone+DM sets per day-of-month for current month.
+  // IMPORTANT: parse the date string as a local-tz date. Airtable returns "YYYY-MM-DD"
+  // and `new Date(s)` treats that as UTC midnight, which shifts to the previous day in
+  // Pacific time and dropped the 1st-of-month entries from the bucket.
   const dailyMTD = new Array(daysInMonth).fill(0);
   for (const r of allRecords) {
     const f = r.fields || {};
@@ -1611,9 +1614,10 @@ function renderSetters() {
     if (!SETTER_NAME_MATCH.test(repName)) continue;
     const dateStr = f[FIELDS.date];
     if (!dateStr) continue;
-    const d = new Date(dateStr);
-    if (d.getFullYear() !== yr || d.getMonth() !== mo) continue;
-    const day = d.getDate();
+    const parts = String(dateStr).slice(0, 10).split('-').map(Number);
+    if (parts.length < 3 || parts.some(isNaN)) continue;
+    if (parts[0] !== yr || parts[1] !== mo + 1) continue;
+    const day = parts[2];
     if (day < 1 || day > daysInMonth) continue;
     dailyMTD[day - 1] += (Number(f[FIELDS.phoneSets]) || 0) + (Number(f[FIELDS.dmSets]) || 0);
   }
