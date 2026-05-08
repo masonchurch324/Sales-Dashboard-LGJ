@@ -827,6 +827,7 @@ function renderWeekly() {
         <td class="rep-name">${fmtWeekLabel(w.start, w.end)}${isCurrent ? ' <span style="color:var(--accent);font-size:11px;font-weight:500;margin-left:6px;">• CURRENT</span>' : ''}</td>
         <td>${team.slotsOpen.toLocaleString()}</td>
         <td>${team.scheduled.toLocaleString()}</td>
+        <td>${team.live.toLocaleString()}</td>
         <td>${fmtPct(team.fillRate)}</td>
         <td>${fmtPct(team.showRate)}</td>
         <td>${fmtPct(team.closeRate)}</td>
@@ -849,12 +850,13 @@ function renderWeekly() {
       <thead>
         <tr>
           <th>Week (Mon–Sun)</th>
-          <th>Slots Open</th>
-          <th>Scheduled Calls</th>
+          <th>Slots</th>
+          <th>Scheduled</th>
+          <th>Live</th>
           <th>Fill Rate</th>
           <th>Show Rate</th>
           <th>Close Rate</th>
-          <th>Units Sold</th>
+          <th>Units</th>
           <th>Contract Value</th>
           <th>New Cash</th>
           <th>Revenue / Call</th>
