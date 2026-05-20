@@ -746,6 +746,27 @@ function render() {
         </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--border,#2a2a2a);background:rgba(255,255,255,0.03);font-weight:600;">
+          <td class="rep-name" style="font-weight:700;">Total</td>
+          <td>${team.slotsOpen.toLocaleString()}</td>
+          <td>${team.scheduled.toLocaleString()}</td>
+          <td>${team.live.toLocaleString()}</td>
+          <td>${team.offersMade.toLocaleString()}</td>
+          <td>${fmtPct(team.fillRate)}</td>
+          <td>${fmtPct(team.showRate)}</td>
+          <td>${fmtPct(team.offerRate)}</td>
+          <td>${fmtPct(team.closeRate)}</td>
+          <td>${team.units}</td>
+          <td>${fmtCurrency(team.contract)}</td>
+          <td>${fmtCurrency(team.cash)}</td>
+          <td>${fmtCurrency(team.revPerCall)}</td>
+          <td>${team.dials.toLocaleString()}</td>
+          <td>${team.pickups.toLocaleString()}</td>
+          <td>${team.phoneSets.toLocaleString()}</td>
+          <td>${team.dmSets.toLocaleString()}</td>
+        </tr>
+      </tfoot>
     </table></div>
   `;
 
