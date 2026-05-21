@@ -1483,13 +1483,26 @@ function renderPaceChart() {
       else projLine.push(mtdTotal + dailyAvg * (i - (elapsedDays - 1)));
     }
 
+    // Ahead/behind pace vs linear goal line — same pattern as Daniel's setter chart.
+    // Shows only when a goal is set (PACE_METRICS default = $150k/mo). Linear pace:
+    // expected = (elapsedDays / totalDays) * goalValue.
+    const goalsForHeadline = getPaceGoals(period.kind);
+    const goalForHeadline = goalsForHeadline[m.key] || 0;
+    const todayPace = goalForHeadline > 0 ? (elapsedDays / totalDays) * goalForHeadline : 0;
+    const vsPace = mtdTotal - todayPace;
+    const vsPaceColor = vsPace >= 0 ? 'rgba(0, 208, 132, 1)' : 'rgba(255, 99, 99, 1)';
+    const vsPaceLabel = vsPace >= 0 ? 'ahead of pace' : 'behind pace';
+    const vsPaceHtml = goalForHeadline > 0
+      ? ` Goal: <strong style="color:var(--text)">${fmtCurrency(goalForHeadline)}</strong> — <strong style="color:${vsPaceColor}">${fmtCurrency(Math.abs(Math.round(vsPace)))} ${vsPaceLabel}</strong>.`
+      : '';
+
     if (headline) {
       headline.innerHTML = `
         <strong style="color:var(--text)">${periodLabel}</strong> ·
         <strong style="color:${m.color};font-size:17px">${fmtCurrency(mtdTotal)}</strong> ${shortNoun}
         (day ${elapsedDays}/${totalDays}). Pacing toward
         <strong style="color:${m.color};font-size:17px">${fmtCurrency(projection)}</strong>
-        @ ${fmtCurrency(dailyAvg)}/day.
+        @ ${fmtCurrency(dailyAvg)}/day.${vsPaceHtml}
       `;
     }
 
