@@ -1740,7 +1740,10 @@ function renderSetters() {
     <div class="chart-card">
       <div id="qualifiedShowsHeadline" style="margin-bottom:12px;font-size:13px;color:var(--text-dim);min-height:36px"></div>
       <canvas id="qualifiedShowsChart" style="max-height:340px"></canvas>
-      <div class="chart-note">Qualified shows = calls in "Lead Generation Consultation 🤝" calendar where Lead Quality starts with "Qualified". This is what defines Daniel's payable performance.</div>
+      <div class="chart-note">
+        <strong>Bars (Booked):</strong> calls in "Lead Generation Consultation 🤝" calendar where Lead Quality starts with "Qualified", attributed to the <strong>booking date</strong>. This is what defines Daniel's payable performance.<br>
+        <strong>Line (Held):</strong> any call where Lead Quality starts with "Qualified", attributed to the <strong>call date</strong>. Shows how many qualified shows actually happened in each month, regardless of when they were booked.
+      </div>
     </div>
   `;
 
@@ -1874,33 +1877,50 @@ function renderQualifiedShowsChart() {
   }
   const monthMap = Object.fromEntries(months.map(m => [m.ym, m]));
 
-  // Count qualified shows per month from CALL_TRACKING.
-  // Qualified show = calendar starts with "Lead Generation Consultation" AND lead quality
-  // starts with "Qualified". Attribute to BOOKING DATE (col A) since that's when the
-  // setter did the work and matches Daniel's pay rule. Falls back to call date if booking
-  // date is missing (older rows where db wasn't captured).
+  // Count qualified shows per month — TWO attributions computed side-by-side:
+  //  1. BOOKED (bar): calendar starts with "Lead Generation Consultation" AND lq starts
+  //     with "Qualified", attributed to BOOKING DATE (col A). Matches Daniel's pay rule.
+  //  2. HELD  (line): any call where lq starts with "Qualified", attributed to CALL DATE
+  //     (col H). Answers "how many qualified shows actually happened in the month?"
+  const heldMonthMap = Object.fromEntries(months.map(m => [m.ym, { count: 0 }]));
   for (const c of CALL_TRACKING) {
-    if (!c.c || !c.lq) continue;
-    const calLower = c.c.toLowerCase();
-    if (!calLower.startsWith('lead generation consultation')) continue;
-    if (!c.lq.toLowerCase().startsWith('qualified')) continue;
-    const dateStr = c.db || c.dc;
-    if (!dateStr) continue;
-    const ym = dateStr.slice(0, 7);
-    if (monthMap[ym]) monthMap[ym].count++;
+    if (!c.lq || !c.lq.toLowerCase().startsWith('qualified')) continue;
+    // Booked-attribution (existing chart behavior)
+    if (c.c && c.c.toLowerCase().startsWith('lead generation consultation')) {
+      const bookedDate = c.db || c.dc;
+      if (bookedDate && monthMap[bookedDate.slice(0, 7)]) {
+        monthMap[bookedDate.slice(0, 7)].count++;
+      }
+    }
+    // Held-attribution (Mason's new trend line — any calendar, by call date)
+    if (c.dc && heldMonthMap[c.dc.slice(0, 7)]) {
+      heldMonthMap[c.dc.slice(0, 7)].count++;
+    }
   }
 
   const labels = months.map(m => m.label);
   const counts = months.map(m => m.count);
+  const heldCounts = months.map(m => heldMonthMap[m.ym].count);
   const total = counts.reduce((a, b) => a + b, 0);
+  const heldTotal = heldCounts.reduce((a, b) => a + b, 0);
   const avg = (total / counts.length).toFixed(1);
+  const heldAvg = (heldTotal / heldCounts.length).toFixed(1);
   const currentMonth = counts[counts.length - 1];
+  const currentHeld = heldCounts[heldCounts.length - 1];
 
   document.getElementById('qualifiedShowsHeadline').innerHTML = `
-    <strong style="color:var(--text)">Last 6 months:</strong>
-    <strong style="color:rgba(0, 208, 132, 1);font-size:17px"> ${total}</strong> qualified shows ·
-    avg <strong>${avg}</strong>/month ·
-    this month so far: <strong style="color:rgba(99, 179, 237, 1);font-size:17px">${currentMonth}</strong>
+    <div style="line-height:1.7">
+      <div>
+        <strong style="color:rgba(0, 208, 132, 1)">Booked qualified shows</strong> (bars):
+        <strong>${total}</strong> in last 6 mo · avg <strong>${avg}</strong>/mo ·
+        this month so far: <strong style="color:rgba(99, 179, 237, 1)">${currentMonth}</strong>
+      </div>
+      <div>
+        <strong style="color:rgba(255, 210, 70, 1)">Qualified shows held</strong> (line, by call date):
+        <strong>${heldTotal}</strong> in last 6 mo · avg <strong>${heldAvg}</strong>/mo ·
+        this month so far: <strong style="color:rgba(255, 210, 70, 1)">${currentHeld}</strong>
+      </div>
+    </div>
   `;
 
   if (__qualifiedShowsChart) __qualifiedShowsChart.destroy();
@@ -1908,36 +1928,64 @@ function renderQualifiedShowsChart() {
     type: 'bar',
     data: {
       labels,
-      datasets: [{
-        label: 'Qualified shows',
-        data: counts,
-        backgroundColor: counts.map((_, i) => i === counts.length - 1
-          ? 'rgba(99, 179, 237, 0.85)'   // current month — blue
-          : 'rgba(0, 208, 132, 0.7)'),    // past months — green
-        borderColor: counts.map((_, i) => i === counts.length - 1
-          ? 'rgba(99, 179, 237, 1)'
-          : 'rgba(0, 208, 132, 1)'),
-        borderWidth: 2,
-        borderRadius: 6,
-        datalabels: {
-          display: true,
-          color: '#e6e9ef',
-          anchor: 'end', align: 'top', offset: 4,
-          font: { weight: 'bold', size: 13 },
-          formatter: v => v,
+      datasets: [
+        {
+          label: 'Booked qualified shows (by booking date)',
+          data: counts,
+          backgroundColor: counts.map((_, i) => i === counts.length - 1
+            ? 'rgba(99, 179, 237, 0.85)'   // current month — blue
+            : 'rgba(0, 208, 132, 0.7)'),    // past months — green
+          borderColor: counts.map((_, i) => i === counts.length - 1
+            ? 'rgba(99, 179, 237, 1)'
+            : 'rgba(0, 208, 132, 1)'),
+          borderWidth: 2,
+          borderRadius: 6,
+          order: 2,
+          datalabels: {
+            display: true,
+            color: '#e6e9ef',
+            anchor: 'end', align: 'top', offset: 4,
+            font: { weight: 'bold', size: 13 },
+            formatter: v => v,
+          },
         },
-      }]
+        {
+          type: 'line',
+          label: 'Qualified shows held (by call date)',
+          data: heldCounts,
+          borderColor: 'rgba(255, 210, 70, 1)',
+          backgroundColor: 'rgba(255, 210, 70, 0.15)',
+          borderWidth: 3,
+          tension: 0.25,
+          pointRadius: 5,
+          pointBackgroundColor: 'rgba(255, 210, 70, 1)',
+          pointBorderColor: '#0d1220',
+          pointBorderWidth: 2,
+          fill: false,
+          order: 1,
+          datalabels: {
+            display: true,
+            color: 'rgba(255, 210, 70, 1)',
+            anchor: 'end', align: 'top', offset: 8,
+            font: { weight: 'bold', size: 12 },
+            formatter: v => v,
+          },
+        },
+      ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      layout: { padding: { top: 24 } },
+      layout: { padding: { top: 28 } },
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          labels: { color: '#e6e9ef', font: { size: 11 }, usePointStyle: true }
+        },
         datalabels: { display: false },
         tooltip: {
           callbacks: {
-            label: ctx => `${ctx.parsed.y} qualified shows`
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}`
           }
         }
       },
