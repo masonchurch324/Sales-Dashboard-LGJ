@@ -497,7 +497,7 @@ function repName(val) {
 }
 
 function blankTotals(label) {
-  return { rep: label, slotsOpen: 0, scheduled: 0, live: 0, offersMade: 0, units: 0, contract: 0, cash: 0, dials: 0, pickups: 0, phoneSets: 0, dmSets: 0 };
+  return { rep: label, slotsOpen: 0, scheduled: 0, live: 0, offersMade: 0, units: 0, contract: 0, cash: 0, sheetContract: 0, sheetCash: 0, dials: 0, pickups: 0, phoneSets: 0, dmSets: 0 };
 }
 
 function filterAndAggregate(range) {
@@ -577,6 +577,9 @@ function filterAndAggregate(range) {
   const repFirstLower = currentRepFilter !== 'all'
     ? (currentRepFilter || '').trim().split(/\s+/)[0].toLowerCase()
     : null;
+  // Per-rep sheet totals for the leaderboard (r.sheetContract / r.sheetCash columns).
+  // sheet's `sp` field stores lowercase first name (e.g. "tyler"), so we index there.
+  const sheetByRep = {};
   for (const row of SALES_TRACKING) {
     if (row.d < startStr || row.d > endStr) continue;
     if (repFirstLower && row.sp !== repFirstLower) continue;
@@ -586,6 +589,18 @@ function filterAndAggregate(range) {
       team.sheetContract += (row.k || 0);
       team.sheetUnits += (row.u || 0);
     }
+    if (row.sp) {
+      if (!sheetByRep[row.sp]) sheetByRep[row.sp] = { contract: 0, cash: 0 };
+      sheetByRep[row.sp].cash += (row.c || 0);           // total cash incl. PP installments
+      if (!row.pp) sheetByRep[row.sp].contract += (row.k || 0);
+    }
+  }
+  // Attach per-rep sheet totals so leaderboard rows can access r.sheetContract / r.sheetCash
+  for (const rep in byRep) {
+    const firstLower = (rep || '').trim().split(/\s+/)[0].toLowerCase();
+    const s = sheetByRep[firstLower] || { contract: 0, cash: 0 };
+    byRep[rep].sheetContract = s.contract;
+    byRep[rep].sheetCash = s.cash;
   }
   // Units Sold sourced from sheet (counts new-sale rows). Contract Value stays Airtable-sourced
   // (reps enter full contract in Airtable for now; sheet is reserved for cash truth).
@@ -708,7 +723,9 @@ function render() {
       <td>${fmtPct(r.closeRate)}</td>
       <td>${medal(ranks.units[r.rep], r.units)}${r.units}</td>
       <td>${medal(ranks.contract[r.rep], r.contract)}${fmtCurrency(r.contract)}</td>
+      <td>${fmtCurrency(r.sheetContract)}</td>
       <td>${fmtCurrency(r.cash)}</td>
+      <td>${fmtCurrency(r.sheetCash)}</td>
       <td>${fmtCurrency(r.revPerCall)}</td>
       <td>${r.dials.toLocaleString()}</td>
       <td>${r.pickups.toLocaleString()}</td>
@@ -736,8 +753,10 @@ function render() {
           <th class="${thClass('offerRate')}" data-sort="offerRate">Offer Rate</th>
           <th class="${thClass('closeRate')}" data-sort="closeRate">Close Rate</th>
           <th class="${thClass('units')}" data-sort="units">Units</th>
-          <th class="${thClass('contract')}" data-sort="contract">Contract Value</th>
-          <th class="${thClass('cash')}" data-sort="cash">New Cash</th>
+          <th class="${thClass('contract')}" data-sort="contract">Contract $ (AT)</th>
+          <th class="${thClass('sheetContract')}" data-sort="sheetContract">Contract $ (GS)</th>
+          <th class="${thClass('cash')}" data-sort="cash">New Cash (AT)</th>
+          <th class="${thClass('sheetCash')}" data-sort="sheetCash">Total Cash (GS)</th>
           <th class="${thClass('revPerCall')}" data-sort="revPerCall">Revenue / Call</th>
           <th class="${thClass('dials')}" data-sort="dials">Dials</th>
           <th class="${thClass('pickups')}" data-sort="pickups">Pickups</th>
@@ -759,7 +778,9 @@ function render() {
           <td>${fmtPct(team.closeRate)}</td>
           <td>${team.units}</td>
           <td>${fmtCurrency(team.contract)}</td>
+          <td>${fmtCurrency(team.sheetContract)}</td>
           <td>${fmtCurrency(team.cash)}</td>
+          <td>${fmtCurrency(team.totalCashCollected)}</td>
           <td>${fmtCurrency(team.revPerCall)}</td>
           <td>${team.dials.toLocaleString()}</td>
           <td>${team.pickups.toLocaleString()}</td>
