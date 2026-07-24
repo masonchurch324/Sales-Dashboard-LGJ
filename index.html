@@ -796,7 +796,8 @@ function render() {
   const showPace = currentPreset === 'mtd' || currentPreset === 'ytd';
   const paceHtml = showPace ? buildPaceChart() : '';
   const totalCashTrendHtml = buildTotalCashTrendSection();
-  document.getElementById('content').innerHTML = teamHtml + tableHtml + paceHtml + totalCashTrendHtml;
+  const salesListHtml = buildSalesListSection();
+  document.getElementById('content').innerHTML = teamHtml + tableHtml + paceHtml + totalCashTrendHtml + salesListHtml;
 
   if (showPace) {
     setTimeout(() => {
@@ -2020,6 +2021,72 @@ function renderQualifiedShowsChart() {
       }
     }
   });
+}
+
+
+// ===== All Sales List (Overview tab, bottom) =====
+// Full list of sales from Google Sheet, filtered to current date range + rep filter.
+// Sorted newest first. Includes both new sales AND payment-plan installments.
+function buildSalesListSection() {
+  if (typeof SALES_TRACKING === 'undefined') return '';
+  const startStr = fmtDate(currentRange.start);
+  const endStr = fmtDate(currentRange.end);
+  const repFirstLower = currentRepFilter !== 'all'
+    ? (currentRepFilter || '').trim().split(/\s+/)[0].toLowerCase()
+    : null;
+
+  const filtered = SALES_TRACKING
+    .filter(r => r.d >= startStr && r.d <= endStr && (!repFirstLower || r.sp === repFirstLower))
+    .sort((a, b) => b.d.localeCompare(a.d));
+
+  const cap = 500;
+  const displayRows = filtered.slice(0, cap);
+  const truncated = filtered.length > cap;
+
+  const fmtCloser = sp => sp ? sp.charAt(0).toUpperCase() + sp.slice(1) : '(unassigned)';
+  const dim = '<span style="color:var(--text-dim)">—</span>';
+
+  const rows = displayRows.map(r => `
+    <tr>
+      <td>${r.d}</td>
+      <td class="rep-name">${fmtCloser(r.sp)}</td>
+      <td>${r.e || dim}</td>
+      <td>${r.pp
+        ? '<span style="color:var(--text-dim);font-size:12px">Payment Plan</span>'
+        : '<span style="color:rgba(0, 208, 132, 1);font-size:12px;font-weight:600">New Sale</span>'}</td>
+      <td style="text-align:right">${r.pp ? dim : fmtCurrency(r.k)}</td>
+      <td style="text-align:right">${fmtCurrency(r.c)}</td>
+    </tr>
+  `).join('');
+
+  const totalCash = filtered.reduce((s, r) => s + (r.c || 0), 0);
+  const totalContract = filtered.reduce((s, r) => s + (r.pp ? 0 : (r.k || 0)), 0);
+  const newSales = filtered.filter(r => !r.pp).length;
+  const ppRows = filtered.filter(r => r.pp).length;
+
+  return `
+    <div class="section-title" style="margin-top:32px">All Sales · ${filtered.length} rows</div>
+    <div style="margin-bottom:12px;font-size:13px;color:var(--text-dim);line-height:1.7">
+      <strong>${newSales}</strong> new sales &middot; <strong>${ppRows}</strong> payment-plan installments &middot;
+      <strong>${fmtCurrency(totalContract)}</strong> total contract &middot;
+      <strong>${fmtCurrency(totalCash)}</strong> total cash
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Date</th>
+        <th>Salesperson</th>
+        <th>Client</th>
+        <th>Type</th>
+        <th style="text-align:right">Contract</th>
+        <th style="text-align:right">Cash</th>
+      </tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:24px">No sales in this window.</td></tr>'}</tbody>
+    </table></div>
+    ${truncated ? `<div class="footnote">Showing first ${cap} of ${filtered.length}. Narrow date range to see less.</div>` : ''}
+    <div class="footnote">
+      <strong>Source:</strong> Sales Tracking tab of Google Sheet. Filtered to the currently-selected date range and rep filter. Sorted newest first.
+    </div>
+  `;
 }
 
 
