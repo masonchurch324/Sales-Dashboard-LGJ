@@ -119,6 +119,7 @@
     .team-grid-6,
     .team-grid-5,
     .team-grid-4 { grid-template-columns: repeat(6, 1fr); }
+    .team-grid-7 { grid-template-columns: repeat(7, 1fr); }
   }
   .kpi-card {
     background: var(--bg-card);
@@ -497,7 +498,7 @@ function repName(val) {
 }
 
 function blankTotals(label) {
-  return { rep: label, slotsOpen: 0, scheduled: 0, live: 0, offersMade: 0, units: 0, sheetUnits: 0, contract: 0, cash: 0, sheetContract: 0, sheetCash: 0, dials: 0, pickups: 0, phoneSets: 0, dmSets: 0 };
+  return { rep: label, slotsOpen: 0, scheduled: 0, live: 0, offersMade: 0, units: 0, sheetUnits: 0, sheetDeposits: 0, sheetDepositCash: 0, contract: 0, cash: 0, sheetContract: 0, sheetCash: 0, dials: 0, pickups: 0, phoneSets: 0, dmSets: 0 };
 }
 
 function filterAndAggregate(range) {
@@ -577,57 +578,68 @@ function filterAndAggregate(range) {
   const repFirstLower = currentRepFilter !== 'all'
     ? (currentRepFilter || '').trim().split(/\s+/)[0].toLowerCase()
     : null;
-  // Deposit detection (Mason 2026-08-03): reps often enter split-payment deals as TWO rows —
-  // the $500 deposit row and the balance row, both carrying the FULL contract value.
-  // Without dedup that double-counts contract and units. Rule: a row is a "deposit" iff
-  //   (a) cash exactly $500, (b) contract > $500, (c) another row with same (email, contract)
-  //   has cash > $500 (the balance). Condition (c) prevents flagging a legit standalone $500 sale.
+  // Deposit detection (Mason 2026-08-03): reps enter split-payment deals as multiple rows —
+  // deposit + balance, both carrying the full contract value. Dedup rule: for each unique
+  // (email, contract) pair, treat the row with the MAX cash as the "primary" (the full deal),
+  // and rows with LESS cash as deposits. Deposits still count toward cash totals, but skip
+  // contract + units to avoid double-counting.
   const maxCashByDeal = new Map();
   for (const row of SALES_TRACKING) {
     if (row.d < startStr || row.d > endStr) continue;
     if (repFirstLower && row.sp !== repFirstLower) continue;
-    if (row.pp) continue;
-    const key = `${row.e || ''}::${row.k || 0}`;
+    if (row.pp || !row.e || !row.k) continue;
+    const key = `${row.e}::${row.k}`;
     const cur = maxCashByDeal.get(key) || 0;
     if ((row.c || 0) > cur) maxCashByDeal.set(key, row.c || 0);
   }
   const isDeposit = (row) => {
-    if (row.pp) return false;
-    if ((row.c || 0) !== 500) return false;
-    if ((row.k || 0) <= 500) return false;
-    return (maxCashByDeal.get(`${row.e || ''}::${row.k || 0}`) || 0) > 500;
+    if (row.pp || !row.e || !row.k) return false;
+    const maxCash = maxCashByDeal.get(`${row.e}::${row.k}`) || 0;
+    return maxCash > (row.c || 0);   // sibling has more cash → this row is the deposit
   };
 
-  // Per-rep sheet totals for the leaderboard (r.sheetContract / r.sheetCash columns).
-  // sheet's `sp` field stores lowercase first name (e.g. "tyler"), so we index there.
+  // Per-rep sheet totals for the leaderboard.
+  team.depositCount = 0;
+  team.depositCash = 0;
   const sheetByRep = {};
   for (const row of SALES_TRACKING) {
     if (row.d < startStr || row.d > endStr) continue;
     if (repFirstLower && row.sp !== repFirstLower) continue;
     team.totalCashCollected += row.c;
+    const dep = isDeposit(row);
     if (!row.pp) {
       team.newCashCollected += row.c;                     // deposits still count as new cash
-      if (!isDeposit(row)) {
+      if (dep) {
+        team.depositCount += 1;
+        team.depositCash += (row.c || 0);
+      } else {
         team.sheetContract += (row.k || 0);
         team.sheetUnits += (row.u || 0);
       }
     }
     if (row.sp) {
-      if (!sheetByRep[row.sp]) sheetByRep[row.sp] = { contract: 0, cash: 0, units: 0 };
+      if (!sheetByRep[row.sp]) sheetByRep[row.sp] = { contract: 0, cash: 0, units: 0, depositCount: 0, depositCash: 0 };
       sheetByRep[row.sp].cash += (row.c || 0);           // total cash incl. PP installments
-      if (!row.pp && !isDeposit(row)) {
-        sheetByRep[row.sp].contract += (row.k || 0);
-        sheetByRep[row.sp].units += 1;                    // count new-sale rows per rep, skip deposits
+      if (!row.pp) {
+        if (dep) {
+          sheetByRep[row.sp].depositCount += 1;
+          sheetByRep[row.sp].depositCash += (row.c || 0);
+        } else {
+          sheetByRep[row.sp].contract += (row.k || 0);
+          sheetByRep[row.sp].units += 1;
+        }
       }
     }
   }
   // Attach per-rep sheet totals so leaderboard rows can access r.sheetContract / r.sheetCash / r.sheetUnits
   for (const rep in byRep) {
     const firstLower = (rep || '').trim().split(/\s+/)[0].toLowerCase();
-    const s = sheetByRep[firstLower] || { contract: 0, cash: 0, units: 0 };
+    const s = sheetByRep[firstLower] || { contract: 0, cash: 0, units: 0, depositCount: 0, depositCash: 0 };
     byRep[rep].sheetContract = s.contract;
     byRep[rep].sheetCash = s.cash;
     byRep[rep].sheetUnits = s.units;
+    byRep[rep].sheetDeposits = s.depositCount;
+    byRep[rep].sheetDepositCash = s.depositCash;
   }
   // Units Sold sourced from sheet (counts new-sale rows). Contract Value stays Airtable-sourced
   // (reps enter full contract in Airtable for now; sheet is reserved for cash truth).
@@ -648,7 +660,7 @@ function render() {
   populateRepFilterDropdown();
 
   const teamHtml = `
-    <div class="team-grid team-grid-6">
+    <div class="team-grid team-grid-7">
       <div class="kpi-card">
         <div class="kpi-label">Slots Open</div>
         <div class="kpi-value">${team.slotsOpen.toLocaleString()}</div>
@@ -672,6 +684,11 @@ function render() {
       <div class="kpi-card">
         <div class="kpi-label">Units Sold</div>
         <div class="kpi-value">${team.units}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Deposits</div>
+        <div class="kpi-value">${team.depositCount}</div>
+        <div style="margin-top:6px;font-size:12px;color:var(--text-dim)">${fmtCurrency(team.depositCash)} collected</div>
       </div>
     </div>
 
@@ -750,6 +767,7 @@ function render() {
       <td>${fmtPct(r.closeRate)}</td>
       <td>${medal(ranks.units[r.rep], r.units)}${r.units}</td>
       <td>${r.sheetUnits}</td>
+      <td>${r.sheetDeposits || 0}</td>
       <td>${medal(ranks.contract[r.rep], r.contract)}${fmtCurrency(r.contract)}</td>
       <td>${fmtCurrency(r.sheetContract)}</td>
       <td>${fmtCurrency(r.cash)}</td>
@@ -782,6 +800,7 @@ function render() {
           <th class="${thClass('closeRate')}" data-sort="closeRate">Close Rate</th>
           <th class="${thClass('units')}" data-sort="units">Units (AT)</th>
           <th class="${thClass('sheetUnits')}" data-sort="sheetUnits">Units (GS)</th>
+          <th class="${thClass('sheetDeposits')}" data-sort="sheetDeposits">Deposits</th>
           <th class="${thClass('contract')}" data-sort="contract">Contract $ (AT)</th>
           <th class="${thClass('sheetContract')}" data-sort="sheetContract">Contract $ (GS)</th>
           <th class="${thClass('cash')}" data-sort="cash">New Cash (AT)</th>
@@ -807,6 +826,7 @@ function render() {
           <td>${fmtPct(team.closeRate)}</td>
           <td>${sorted.reduce((s, r) => s + (r.units || 0), 0)}</td>
           <td>${team.sheetUnits}</td>
+          <td>${team.depositCount || 0}</td>
           <td>${fmtCurrency(team.contract)}</td>
           <td>${fmtCurrency(team.sheetContract)}</td>
           <td>${fmtCurrency(team.cash)}</td>
@@ -2077,14 +2097,18 @@ function buildSalesListSection() {
   const dim = '<span style="color:var(--text-dim)">—</span>';
 
   // Deposit detection: $500 cash + contract > $500 + matching (email, contract) row with more cash
+  // Dedup deposits: row is a deposit if another row exists with same (email, contract)
+  // and higher cash. Matches the same rule used in filterAndAggregate.
   const maxCashByDeal = new Map();
   for (const r of filtered) {
-    if (r.pp) continue;
-    const k = `${r.e || ''}::${r.k || 0}`;
+    if (r.pp || !r.e || !r.k) continue;
+    const k = `${r.e}::${r.k}`;
     if ((r.c || 0) > (maxCashByDeal.get(k) || 0)) maxCashByDeal.set(k, r.c || 0);
   }
-  const isDeposit = (r) => !r.pp && (r.c || 0) === 500 && (r.k || 0) > 500
-    && (maxCashByDeal.get(`${r.e || ''}::${r.k || 0}`) || 0) > 500;
+  const isDeposit = (r) => {
+    if (r.pp || !r.e || !r.k) return false;
+    return (maxCashByDeal.get(`${r.e}::${r.k}`) || 0) > (r.c || 0);
+  };
 
   const rows = displayRows.map(r => {
     const dep = isDeposit(r);
