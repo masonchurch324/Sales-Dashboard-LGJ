@@ -2387,19 +2387,8 @@ function renderCompliance() {
     return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   };
 
-  // Apply dismissed-overdue filter to team + per-closer counts (so KPIs match visible list)
-  const __dismissed = (() => {
-    try { return new Set(JSON.parse(localStorage.getItem('compliance.dismissed.v1') || '[]')); }
-    catch { return new Set(); }
-  })();
-  const __callKey = c => `${c.e}|${c.dc}`;
-  for (const c of overdueList) {
-    if (__dismissed.has(__callKey(c))) {
-      teamOverdue--;
-      const closer = c.sp || '(unassigned)';
-      if (perCloser[closer]) perCloser[closer].overdue = Math.max(0, perCloser[closer].overdue - 1);
-    }
-  }
+  // Clear any lingering "dismissed" entries from the old feature so they don't affect anything.
+  try { localStorage.removeItem('compliance.dismissed.v1'); } catch {}
 
   const teamCompliance = teamCalls > 0 ? (teamForms / teamCalls * 100).toFixed(1) + '%' : '—';
 
@@ -2479,45 +2468,14 @@ function renderCompliance() {
     </table></div>
   `;
 
-  // Load dismissed (manually marked complete) keys from localStorage.
-  // A "complete" mark is local-only — used when Mason has verified the form was filled
-  // in GHL but the sheet snapshot doesn't reflect it yet, OR when he's followed up with
-  // the closer offline and resolved it.
-  const DISMISS_KEY = 'compliance.dismissed.v1';
-  const loadDismissed = () => {
-    try { return new Set(JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]')); }
-    catch { return new Set(); }
-  };
-  const saveDismissed = set => {
-    try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...set])); } catch {}
-  };
-  const dismissed = loadDismissed();
-  const callKey = c => `${c.e}|${c.dc}`;
-
-  // Filter out dismissed entries from the overdue list before any other logic
-  const visibleOverdue = overdueList.filter(c => !dismissed.has(callKey(c)));
-
-  // Rep filter — operates on the already-dismissed-filtered list
-  const overdueReps = [...new Set(visibleOverdue.map(c => c.sp || '(unassigned)'))].sort();
+  // Rep filter — operates directly on the full overdue list (no dismiss filtering anymore)
+  const overdueReps = [...new Set(overdueList.map(c => c.sp || '(unassigned)'))].sort();
   if (overdueFilter !== 'all' && !overdueReps.includes(overdueFilter)) {
     overdueFilter = 'all';
   }
   const filteredOverdue = overdueFilter === 'all'
-    ? visibleOverdue
-    : visibleOverdue.filter(c => (c.sp || '(unassigned)') === overdueFilter);
-
-  // Expose handlers globally so onclick can reach them
-  window.__markComplete = (key) => {
-    const s = loadDismissed();
-    s.add(key);
-    saveDismissed(s);
-    renderCompliance();
-  };
-  window.__resetDismissed = () => {
-    if (!confirm('Show all previously-dismissed overdue forms again?')) return;
-    localStorage.removeItem(DISMISS_KEY);
-    renderCompliance();
-  };
+    ? overdueList
+    : overdueList.filter(c => (c.sp || '(unassigned)') === overdueFilter);
 
   const filterBtn = (label, key, count) => `
     <button class="preset-btn ${overdueFilter === key ? 'active' : ''}"
@@ -2526,15 +2484,13 @@ function renderCompliance() {
     </button>`;
 
   const filterBtns = [
-    filterBtn('All', 'all', visibleOverdue.length),
+    filterBtn('All', 'all', overdueList.length),
     ...overdueReps.map(rep =>
-      filterBtn(fmtCloser(rep), rep, visibleOverdue.filter(c => (c.sp || '(unassigned)') === rep).length)
+      filterBtn(fmtCloser(rep), rep, overdueList.filter(c => (c.sp || '(unassigned)') === rep).length)
     )
   ].join('');
 
-  const overdueRows = filteredOverdue.slice(0, 200).map(c => {
-    const key = callKey(c).replace(/'/g, "\\'");
-    return `
+  const overdueRows = filteredOverdue.slice(0, 500).map(c => `
     <tr>
       <td>${fmtDateTime(c.dc)}</td>
       <td class="rep-name">${fmtCloser(c.sp)}</td>
@@ -2542,30 +2498,17 @@ function renderCompliance() {
       <td style="font-family:monospace;font-size:13px;color:var(--text-dim)">${c.e || ''}</td>
       <td style="color:var(--text-dim);font-size:13px">${c.c || ''}</td>
       <td style="color:var(--danger);font-weight:700">${fmtHours(c.hoursOld)}</td>
-      <td><button class="preset-btn" style="padding:6px 12px;font-size:12px"
-                  onclick="__markComplete('${key}')"
-                  title="Mark this overdue form as complete (local-only — won't change GHL or the sheet)">
-        ✓ Complete
-      </button></td>
-    </tr>`;
-  }).join('');
+    </tr>
+  `).join('');
 
   const overdueLabel = overdueFilter === 'all'
-    ? `Overdue Forms (${visibleOverdue.length})`
+    ? `Overdue Forms (${overdueList.length})`
     : `Overdue Forms — ${fmtCloser(overdueFilter)} (${filteredOverdue.length})`;
 
-  const dismissedCount = dismissed.size;
-  const dismissedNote = dismissedCount > 0
-    ? `<span style="color:var(--text-dim);font-size:12px;font-weight:500;margin-left:12px">
-         ${dismissedCount} dismissed
-         <a href="#" onclick="event.preventDefault();__resetDismissed()" style="color:var(--accent);margin-left:6px">reset</a>
-       </span>`
-    : '';
-
   const overdueHtml = `
-    <div class="section-title" style="margin-top:32px">${overdueLabel}${dismissedNote}</div>
-    ${visibleOverdue.length === 0
-      ? '<div class="status" style="color:var(--accent)">✓ No overdue forms — all past calls in this window have a post-call form filled (or have been marked complete).</div>'
+    <div class="section-title" style="margin-top:32px">${overdueLabel}</div>
+    ${overdueList.length === 0
+      ? '<div class="status" style="color:var(--accent)">✓ No overdue forms — all past calls in this window have a post-call form filled.</div>'
       : `<div class="controls" style="margin-bottom:12px">${filterBtns}</div>
          <div class="table-wrap"><table>
           <thead><tr>
@@ -2575,9 +2518,8 @@ function renderCompliance() {
             <th>Email</th>
             <th>Calendar</th>
             <th>Overdue By</th>
-            <th></th>
           </tr></thead>
-          <tbody>${overdueRows || '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:24px">No overdue forms for this closer.</td></tr>'}</tbody>
+          <tbody>${overdueRows || '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:24px">No overdue forms for this closer.</td></tr>'}</tbody>
         </table></div>`
     }
   `;
