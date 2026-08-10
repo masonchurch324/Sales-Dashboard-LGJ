@@ -577,6 +577,27 @@ function filterAndAggregate(range) {
   const repFirstLower = currentRepFilter !== 'all'
     ? (currentRepFilter || '').trim().split(/\s+/)[0].toLowerCase()
     : null;
+  // Deposit detection (Mason 2026-08-03): reps often enter split-payment deals as TWO rows —
+  // the $500 deposit row and the balance row, both carrying the FULL contract value.
+  // Without dedup that double-counts contract and units. Rule: a row is a "deposit" iff
+  //   (a) cash exactly $500, (b) contract > $500, (c) another row with same (email, contract)
+  //   has cash > $500 (the balance). Condition (c) prevents flagging a legit standalone $500 sale.
+  const maxCashByDeal = new Map();
+  for (const row of SALES_TRACKING) {
+    if (row.d < startStr || row.d > endStr) continue;
+    if (repFirstLower && row.sp !== repFirstLower) continue;
+    if (row.pp) continue;
+    const key = `${row.e || ''}::${row.k || 0}`;
+    const cur = maxCashByDeal.get(key) || 0;
+    if ((row.c || 0) > cur) maxCashByDeal.set(key, row.c || 0);
+  }
+  const isDeposit = (row) => {
+    if (row.pp) return false;
+    if ((row.c || 0) !== 500) return false;
+    if ((row.k || 0) <= 500) return false;
+    return (maxCashByDeal.get(`${row.e || ''}::${row.k || 0}`) || 0) > 500;
+  };
+
   // Per-rep sheet totals for the leaderboard (r.sheetContract / r.sheetCash columns).
   // sheet's `sp` field stores lowercase first name (e.g. "tyler"), so we index there.
   const sheetByRep = {};
@@ -585,16 +606,18 @@ function filterAndAggregate(range) {
     if (repFirstLower && row.sp !== repFirstLower) continue;
     team.totalCashCollected += row.c;
     if (!row.pp) {
-      team.newCashCollected += row.c;
-      team.sheetContract += (row.k || 0);
-      team.sheetUnits += (row.u || 0);
+      team.newCashCollected += row.c;                     // deposits still count as new cash
+      if (!isDeposit(row)) {
+        team.sheetContract += (row.k || 0);
+        team.sheetUnits += (row.u || 0);
+      }
     }
     if (row.sp) {
       if (!sheetByRep[row.sp]) sheetByRep[row.sp] = { contract: 0, cash: 0, units: 0 };
       sheetByRep[row.sp].cash += (row.c || 0);           // total cash incl. PP installments
-      if (!row.pp) {
+      if (!row.pp && !isDeposit(row)) {
         sheetByRep[row.sp].contract += (row.k || 0);
-        sheetByRep[row.sp].units += 1;                    // count new-sale rows per rep
+        sheetByRep[row.sp].units += 1;                    // count new-sale rows per rep, skip deposits
       }
     }
   }
@@ -2053,28 +2076,48 @@ function buildSalesListSection() {
   const fmtCloser = sp => sp ? sp.charAt(0).toUpperCase() + sp.slice(1) : '(unassigned)';
   const dim = '<span style="color:var(--text-dim)">—</span>';
 
-  const rows = displayRows.map(r => `
-    <tr>
-      <td>${r.d}</td>
-      <td class="rep-name">${fmtCloser(r.sp)}</td>
-      <td>${r.e || dim}</td>
-      <td>${r.pp
-        ? '<span style="color:var(--text-dim);font-size:12px">Payment Plan</span>'
-        : '<span style="color:rgba(0, 208, 132, 1);font-size:12px;font-weight:600">New Sale</span>'}</td>
-      <td style="text-align:right">${r.pp ? dim : fmtCurrency(r.k)}</td>
-      <td style="text-align:right">${fmtCurrency(r.c)}</td>
-    </tr>
-  `).join('');
+  // Deposit detection: $500 cash + contract > $500 + matching (email, contract) row with more cash
+  const maxCashByDeal = new Map();
+  for (const r of filtered) {
+    if (r.pp) continue;
+    const k = `${r.e || ''}::${r.k || 0}`;
+    if ((r.c || 0) > (maxCashByDeal.get(k) || 0)) maxCashByDeal.set(k, r.c || 0);
+  }
+  const isDeposit = (r) => !r.pp && (r.c || 0) === 500 && (r.k || 0) > 500
+    && (maxCashByDeal.get(`${r.e || ''}::${r.k || 0}`) || 0) > 500;
+
+  const rows = displayRows.map(r => {
+    const dep = isDeposit(r);
+    const typeTag = r.pp
+      ? '<span style="color:var(--text-dim);font-size:12px">Payment Plan</span>'
+      : dep
+        ? '<span style="color:rgba(255, 180, 0, 1);font-size:12px;font-weight:600">Deposit</span>'
+        : '<span style="color:rgba(0, 208, 132, 1);font-size:12px;font-weight:600">New Sale</span>';
+    return `
+      <tr>
+        <td>${r.d}</td>
+        <td class="rep-name">${fmtCloser(r.sp)}</td>
+        <td>${r.e || dim}</td>
+        <td>${typeTag}</td>
+        <td style="text-align:right">${r.pp ? dim : fmtCurrency(r.k)}</td>
+        <td style="text-align:right">${fmtCurrency(r.c)}</td>
+      </tr>
+    `;
+  }).join('');
 
   const totalCash = filtered.reduce((s, r) => s + (r.c || 0), 0);
-  const totalContract = filtered.reduce((s, r) => s + (r.pp ? 0 : (r.k || 0)), 0);
-  const newSales = filtered.filter(r => !r.pp).length;
+  const totalContract = filtered.reduce((s, r) =>
+    s + (r.pp || isDeposit(r) ? 0 : (r.k || 0)), 0);
+  const newSales = filtered.filter(r => !r.pp && !isDeposit(r)).length;
+  const depositCount = filtered.filter(r => isDeposit(r)).length;
   const ppRows = filtered.filter(r => r.pp).length;
 
   return `
     <div class="section-title" style="margin-top:32px">All Sales · ${filtered.length} rows</div>
     <div style="margin-bottom:12px;font-size:13px;color:var(--text-dim);line-height:1.7">
-      <strong>${newSales}</strong> new sales &middot; <strong>${ppRows}</strong> payment-plan installments &middot;
+      <strong>${newSales}</strong> new sales &middot;
+      <strong>${depositCount}</strong> deposits (already counted in the matching sale row) &middot;
+      <strong>${ppRows}</strong> payment-plan installments &middot;
       <strong>${fmtCurrency(totalContract)}</strong> total contract &middot;
       <strong>${fmtCurrency(totalCash)}</strong> total cash
     </div>
