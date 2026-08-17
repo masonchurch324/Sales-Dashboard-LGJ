@@ -2275,11 +2275,44 @@ function renderQuarterlyCashSection() {
   // --- History bars
   const histLabels = quarters.map(x => x.key.replace('-', ' '));
   const histTotals = quarters.map(x => x.total);
-  const histAvgPool = quarters.slice(0, -1).map(x => x.total).filter(v => v > 0);
-  const histAvg = histAvgPool.length ? histAvgPool.reduce((a, b) => a + b, 0) / histAvgPool.length : 0;
+  // Mark quarters that started before the sheet's first row as partial —
+  // they under-report and shouldn't feed avg/best/QoQ comparisons.
+  let minD = null;
+  for (const row of SALES_TRACKING) {
+    if (row.d && (!minD || row.d < minD)) minD = row.d;
+  }
+  for (const x of quarters) {
+    const [xy, xq] = x.key.split('-Q').map(Number);
+    const qStartStr = `${xy}-${String((xq - 1) * 3 + 1).padStart(2, '0')}-01`;
+    x.partial = !!minD && qStartStr < minD;
+  }
+  const fullPrev = quarters.slice(0, -1).filter(x => !x.partial && x.total > 0);
+  const histAvg = fullPrev.length ? fullPrev.reduce((a, b) => a + b.total, 0) / fullPrev.length : 0;
+  const bestPrev = Math.max(...fullPrev.map(x => x.total), 0);
+  const statCards = quarters.map((x, i) => {
+    const isCur = i === quarters.length - 1;
+    const prevQ = i > 0 ? quarters[i - 1] : null;
+    const qoq = (prevQ && !prevQ.partial && prevQ.total > 0) ? (x.total - prevQ.total) / prevQ.total * 100 : null;
+    const qoqHtml = isCur
+      ? `<div style="font-size:11px;color:var(--text-dim)">in progress</div>`
+      : x.partial
+        ? `<div style="font-size:11px;color:var(--text-dim)">partial data</div>`
+        : (qoq !== null
+          ? `<div style="font-size:11px;color:${qoq >= 0 ? 'rgba(0,208,132,0.9)' : 'var(--danger, #ff5c5c)'}">${qoq >= 0 ? '▲' : '▼'} ${Math.abs(qoq).toFixed(0)}% QoQ</div>`
+          : '<div style="font-size:11px;color:var(--text-dim)">—</div>');
+    const crown = (!isCur && !x.partial && x.total === bestPrev && bestPrev > 0) ? ' 👑' : '';
+    return `
+      <div style="background:#0d1220;border:1px solid #232a3d;border-radius:8px;padding:10px 14px;min-width:118px">
+        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em">${x.key.replace('-', ' ')}${crown}</div>
+        <div style="font-size:16px;font-weight:700;color:${isCur ? 'rgba(99,179,237,1)' : 'var(--text)'}">${fmtK(x.total)}</div>
+        ${qoqHtml}
+      </div>`;
+  }).join('');
   document.getElementById('quarterHistHeadline').innerHTML = `
-    Avg full quarter: <strong style="color:rgba(0,208,132,1)">${fmt$(histAvg)}</strong> ·
-    ${curKey.replace('-', ' ')} so far: <strong style="color:rgba(99,179,237,1)">${fmt$(curTotal)}</strong>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">${statCards}</div>
+    <div>Avg full quarter: <strong style="color:rgba(0,208,132,1)">${fmt$(histAvg)}</strong> ·
+    best: <strong style="color:rgba(0,208,132,1)">${fmt$(bestPrev)}</strong> ·
+    ${curKey.replace('-', ' ')} so far: <strong style="color:rgba(99,179,237,1)">${fmt$(curTotal)}</strong></div>
   `;
   if (__quarterHistChart) __quarterHistChart.destroy();
   __quarterHistChart = new Chart(histCanvas.getContext('2d'), {
