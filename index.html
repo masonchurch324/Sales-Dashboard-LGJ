@@ -846,8 +846,9 @@ function render() {
   const showPace = currentPreset === 'mtd' || currentPreset === 'ytd';
   const paceHtml = showPace ? buildPaceChart() : '';
   const totalCashTrendHtml = buildTotalCashTrendSection();
+  const quarterlyCashHtml = buildQuarterlyCashSection();
   const salesListHtml = buildSalesListSection();
-  document.getElementById('content').innerHTML = teamHtml + tableHtml + paceHtml + totalCashTrendHtml + salesListHtml;
+  document.getElementById('content').innerHTML = teamHtml + tableHtml + paceHtml + totalCashTrendHtml + quarterlyCashHtml + salesListHtml;
 
   if (showPace) {
     setTimeout(() => {
@@ -863,6 +864,16 @@ function render() {
     }, 0);
   }
   setTimeout(() => renderTotalCashTrendChart(), 0);
+  setTimeout(() => {
+    renderQuarterlyCashSection();
+    const gi = document.getElementById('quarterGoalInput');
+    if (gi) {
+      gi.addEventListener('input', e => {
+        setQuarterGoal(currentQuarterKey(), e.target.value);
+        renderQuarterlyCashSection();
+      });
+    }
+  }, 0);
 
   document.querySelectorAll('th[data-sort]').forEach(th => {
     th.addEventListener('click', () => {
@@ -2161,6 +2172,211 @@ function buildSalesListSection() {
       <strong>Source:</strong> Sales Tracking tab of Google Sheet. Filtered to the currently-selected date range and rep filter. Sorted newest first.
     </div>
   `;
+}
+
+
+// ===== Quarterly Cash Section (Overview tab) =====
+// History bars per quarter + editable quarter goal + progress bar + cumulative pace chart.
+// Goal persists in localStorage per quarter (same pattern as pace/setter goals).
+const QCASH_GOAL_KEY = 'quarterlyCashGoal.v1';
+function getQuarterGoals() {
+  try { return JSON.parse(localStorage.getItem(QCASH_GOAL_KEY) || '{}'); } catch { return {}; }
+}
+function setQuarterGoal(qKey, val) {
+  const g = getQuarterGoals();
+  const n = parseFloat(val);
+  if (!isNaN(n) && n > 0) g[qKey] = n; else delete g[qKey];
+  try { localStorage.setItem(QCASH_GOAL_KEY, JSON.stringify(g)); } catch {}
+}
+function currentQuarterKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+}
+
+function buildQuarterlyCashSection() {
+  return `
+    <div class="section-title" style="margin-top:32px">Quarterly Cash · History & Goal Pace</div>
+    <div class="chart-card" style="margin-bottom:16px">
+      <div id="quarterHistHeadline" style="margin-bottom:12px;font-size:13px;color:var(--text-dim);min-height:20px"></div>
+      <canvas id="quarterHistChart" style="max-height:240px"></canvas>
+      <div class="chart-note">Total cash collected (Google Sheet, incl. payment-plan installments) per calendar quarter. Blue = current quarter, in progress.</div>
+    </div>
+    <div class="table-wrap" style="padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em">
+        ${currentQuarterKey().replace('-', ' ')} cash goal
+        <span style="display:inline-flex;align-items:center;gap:4px;background:#0d1220;border:1px solid #232a3d;border-radius:6px;padding:6px 10px">
+          <span style="color:#8a93a6;font-size:13px">$</span>
+          <input type="number" min="0" step="10000" id="quarterGoalInput" placeholder="350000"
+                 value="${getQuarterGoals()[currentQuarterKey()] || ''}"
+                 style="background:transparent;border:0;color:var(--text);font-size:14px;font-weight:600;width:110px;outline:none;text-transform:none;letter-spacing:0" />
+        </span>
+      </label>
+      <div style="flex:1;min-width:280px">
+        <div id="quarterProgressLabel" style="font-size:13px;color:var(--text-dim);margin-bottom:6px"></div>
+        <div style="background:#0d1220;border:1px solid #232a3d;border-radius:8px;height:18px;overflow:hidden;position:relative">
+          <div id="quarterProgressFill" style="height:100%;width:0%;background:rgba(0,208,132,0.8);transition:width 0.3s"></div>
+          <div id="quarterProgressElapsed" style="position:absolute;top:0;bottom:0;width:2px;background:rgba(255,255,255,0.5)" title="Time elapsed in quarter"></div>
+        </div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div id="quarterPaceHeadline" style="margin-bottom:12px;font-size:13px;color:var(--text-dim);min-height:36px"></div>
+      <canvas id="quarterPaceChart" style="max-height:340px"></canvas>
+      <div class="chart-note">Cumulative total cash this quarter · yellow dash = projection at current daily pace · gray dash = goal pace. White tick on the progress bar above marks time elapsed.</div>
+    </div>
+  `;
+}
+
+let __quarterHistChart = null;
+let __quarterPaceChart = null;
+function renderQuarterlyCashSection() {
+  if (typeof SALES_TRACKING === 'undefined') return;
+  const histCanvas = document.getElementById('quarterHistChart');
+  const paceCanvas = document.getElementById('quarterPaceChart');
+  if (!histCanvas || !paceCanvas) return;
+
+  const now = new Date();
+  const curY = now.getFullYear();
+  const curQ = Math.floor(now.getMonth() / 3) + 1;
+  const curKey = `${curY}-Q${curQ}`;
+  const fmt$ = n => '$' + Math.round(n).toLocaleString('en-US');
+  const fmtK = n => '$' + Math.round(n / 1000).toLocaleString('en-US') + 'K';
+
+  // Quarter boundaries (local time, no UTC parsing — avoids the 1st-of-month bug)
+  const qStart = new Date(curY, (curQ - 1) * 3, 1);
+  const qEndEx = new Date(curY, curQ * 3, 1);
+  const daysInQ = Math.round((qEndEx - qStart) / 86400000);
+  const elapsedDays = Math.min(daysInQ,
+    Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - qStart) / 86400000) + 1);
+
+  // --- Aggregate: last 6 quarters + daily cash for the current quarter
+  const quarters = [];
+  { let y = curY, q = curQ;
+    for (let i = 0; i < 6; i++) { quarters.unshift({ key: `${y}-Q${q}`, total: 0 }); q--; if (q === 0) { q = 4; y--; } } }
+  const qMap = Object.fromEntries(quarters.map(x => [x.key, x]));
+  const dailyCash = new Array(daysInQ).fill(0);
+
+  for (const row of SALES_TRACKING) {
+    if (!row.d) continue;
+    const ry = +row.d.slice(0, 4), rm = +row.d.slice(5, 7), rd = +row.d.slice(8, 10);
+    const key = `${ry}-Q${Math.floor((rm - 1) / 3) + 1}`;
+    if (qMap[key]) qMap[key].total += row.c || 0;
+    if (key === curKey) {
+      const idx = Math.floor((new Date(ry, rm - 1, rd) - qStart) / 86400000);
+      if (idx >= 0 && idx < daysInQ) dailyCash[idx] += row.c || 0;
+    }
+  }
+
+  const goal = getQuarterGoals()[curKey] || 0;
+  const curTotal = qMap[curKey].total;
+  const dailyAvg = elapsedDays > 0 ? curTotal / elapsedDays : 0;
+  const projected = dailyAvg * daysInQ;
+
+  // --- History bars
+  const histLabels = quarters.map(x => x.key.replace('-', ' '));
+  const histTotals = quarters.map(x => x.total);
+  const histAvgPool = quarters.slice(0, -1).map(x => x.total).filter(v => v > 0);
+  const histAvg = histAvgPool.length ? histAvgPool.reduce((a, b) => a + b, 0) / histAvgPool.length : 0;
+  document.getElementById('quarterHistHeadline').innerHTML = `
+    Avg full quarter: <strong style="color:rgba(0,208,132,1)">${fmt$(histAvg)}</strong> ·
+    ${curKey.replace('-', ' ')} so far: <strong style="color:rgba(99,179,237,1)">${fmt$(curTotal)}</strong>
+  `;
+  if (__quarterHistChart) __quarterHistChart.destroy();
+  __quarterHistChart = new Chart(histCanvas.getContext('2d'), {
+    type: 'bar',
+    data: { labels: histLabels, datasets: [{
+      label: 'Total cash',
+      data: histTotals,
+      backgroundColor: histTotals.map((_, i) => i === histTotals.length - 1 ? 'rgba(99,179,237,0.85)' : 'rgba(0,208,132,0.7)'),
+      borderColor: histTotals.map((_, i) => i === histTotals.length - 1 ? 'rgba(99,179,237,1)' : 'rgba(0,208,132,1)'),
+      borderWidth: 2, borderRadius: 6,
+      datalabels: { display: true, color: '#e6e9ef', anchor: 'end', align: 'top', offset: 4,
+                    font: { weight: 'bold', size: 12 }, formatter: v => fmtK(v) },
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false, layout: { padding: { top: 26 } },
+      plugins: { legend: { display: false }, datalabels: { display: false },
+                 tooltip: { callbacks: { label: ctx => fmt$(ctx.parsed.y || 0) } } },
+      scales: { x: { ticks: { color: '#8a93a6' }, grid: { color: '#232a3d' } },
+                y: { ticks: { color: '#8a93a6', callback: v => fmtK(v) }, grid: { color: '#232a3d' }, beginAtZero: true } }
+    }
+  });
+
+  // --- Progress bar
+  const pctOfGoal = goal > 0 ? curTotal / goal * 100 : 0;
+  const pctElapsed = elapsedDays / daysInQ * 100;
+  const fill = document.getElementById('quarterProgressFill');
+  const elapsedTick = document.getElementById('quarterProgressElapsed');
+  const label = document.getElementById('quarterProgressLabel');
+  if (goal > 0) {
+    const onPace = pctOfGoal >= pctElapsed;
+    fill.style.width = Math.min(100, pctOfGoal) + '%';
+    fill.style.background = onPace ? 'rgba(0,208,132,0.8)' : 'rgba(255,140,0,0.8)';
+    elapsedTick.style.left = pctElapsed + '%';
+    elapsedTick.style.display = '';
+    const paceGap = curTotal - (goal * elapsedDays / daysInQ);
+    label.innerHTML = `<strong style="color:var(--text)">${fmt$(curTotal)}</strong> of ${fmt$(goal)} goal
+      (<strong>${pctOfGoal.toFixed(0)}%</strong>) · day ${elapsedDays}/${daysInQ} (${pctElapsed.toFixed(0)}% elapsed) ·
+      <strong style="color:${paceGap >= 0 ? 'rgba(0,208,132,1)' : 'var(--danger, #ff5c5c)'}">${fmt$(Math.abs(paceGap))} ${paceGap >= 0 ? 'ahead of' : 'behind'} pace</strong>`;
+  } else {
+    fill.style.width = '0%';
+    elapsedTick.style.display = 'none';
+    label.innerHTML = `Set a goal to track progress — ${fmt$(curTotal)} collected so far (day ${elapsedDays}/${daysInQ})`;
+  }
+
+  // --- Cumulative pace chart
+  const labels = Array.from({ length: daysInQ }, (_, i) => i + 1);
+  const cumActual = [];
+  let run = 0;
+  for (let i = 0; i < daysInQ; i++) {
+    if (i < elapsedDays) { run += dailyCash[i]; cumActual.push(run); }
+    else cumActual.push(null);
+  }
+  const projLine = labels.map((_, i) =>
+    i < elapsedDays - 1 ? null : dailyAvg * (i + 1));
+  const goalLine = goal > 0 ? labels.map((_, i) => goal * (i + 1) / daysInQ) : null;
+
+  document.getElementById('quarterPaceHeadline').innerHTML = `
+    <strong style="color:var(--text)">${curKey.replace('-', ' ')}</strong> ·
+    <strong style="color:rgba(0,208,132,1);font-size:17px">${fmt$(curTotal)}</strong> collected ·
+    pacing toward <strong style="color:rgba(255,210,70,1);font-size:17px">${fmt$(projected)}</strong>
+    ${goal > 0 ? `· goal <strong style="color:var(--text)">${fmt$(goal)}</strong> —
+      <strong style="color:${projected >= goal ? 'rgba(0,208,132,1)' : 'var(--danger, #ff5c5c)'}">projection ${projected >= goal ? 'clears' : 'misses'} goal by ${fmt$(Math.abs(projected - goal))}</strong>` : ''}
+  `;
+
+  const datasets = [
+    { label: 'Actual (cumulative)', data: cumActual,
+      borderColor: 'rgba(0,208,132,1)', backgroundColor: 'rgba(0,208,132,0.12)', fill: true,
+      borderWidth: 3, pointRadius: 0, tension: 0.15, spanGaps: false },
+    { label: `Projected (${fmtK(projected)})`, data: projLine,
+      borderColor: 'rgba(255,210,70,0.95)', borderDash: [6, 4], fill: false,
+      borderWidth: 2, pointRadius: 0, tension: 0 },
+  ];
+  if (goalLine) datasets.push(
+    { label: `Goal pace (${fmtK(goal)})`, data: goalLine,
+      borderColor: 'rgba(150,160,180,0.7)', borderDash: [2, 4], fill: false,
+      borderWidth: 2, pointRadius: 0, tension: 0 });
+
+  if (__quarterPaceChart) __quarterPaceChart.destroy();
+  __quarterPaceChart = new Chart(paceCanvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, layout: { padding: { right: 24, top: 12 } },
+      plugins: {
+        legend: { labels: { color: '#e6e9ef', font: { size: 11 } } },
+        datalabels: { display: false },
+        tooltip: { callbacks: {
+          label: ctx => `${ctx.dataset.label}: ${fmt$(ctx.parsed.y || 0)}`,
+          title: items => `Day ${items[0].label}` } }
+      },
+      scales: {
+        x: { ticks: { color: '#8a93a6', maxTicksLimit: 16 }, grid: { color: '#232a3d' },
+             title: { display: true, text: 'Day of quarter', color: '#8a93a6' } },
+        y: { ticks: { color: '#8a93a6', callback: v => fmtK(v) }, grid: { color: '#232a3d' }, beginAtZero: true }
+      }
+    }
+  });
 }
 
 
