@@ -1176,8 +1176,8 @@ function renderMonthly() {
 // SALES_TRACKING row merged in on load AND after every live /api/sheet refresh. Tagged adj:true
 // so they're visible in the All Sales list. Remove an entry once the sheet itself is corrected.
 const SHEET_ADJUSTMENTS = [
-  { d: '2026-08-21', c: -3333, pp: true, k: 0, u: 0, sp: 'ian', e: 'donavan@sparkstudyclub.com',
-    adj: true, note: 'Refund — accidental 4th installment on a 3-pay (Mason, Aug 2026)' },
+  // (empty) — the Aug 21 Donavan refund was corrected in the sheet itself on 2026-08-22.
+  // Example shape: { d:'YYYY-MM-DD', c:-3333, pp:true, k:0, u:0, sp:'ian', e:'x@y.com', adj:true, note:'...' }
 ];
 function applySheetAdjustments() {
   if (typeof SALES_TRACKING === 'undefined') return;
