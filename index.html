@@ -498,7 +498,7 @@ function repName(val) {
 }
 
 function blankTotals(label) {
-  return { rep: label, slotsOpen: 0, scheduled: 0, live: 0, offersMade: 0, units: 0, sheetUnits: 0, sheetDeposits: 0, sheetDepositCash: 0, contract: 0, cash: 0, sheetContract: 0, sheetCash: 0, dials: 0, pickups: 0, phoneSets: 0, dmSets: 0 };
+  return { rep: label, slotsOpen: 0, scheduled: 0, live: 0, offersMade: 0, units: 0, sheetUnits: 0, sheetDeposits: 0, sheetDepositCash: 0, contract: 0, cash: 0, sheetContract: 0, sheetCash: 0, sheetNewCash: 0, dials: 0, pickups: 0, phoneSets: 0, dmSets: 0 };
 }
 
 function filterAndAggregate(range) {
@@ -618,9 +618,10 @@ function filterAndAggregate(range) {
       }
     }
     if (row.sp) {
-      if (!sheetByRep[row.sp]) sheetByRep[row.sp] = { contract: 0, cash: 0, units: 0, depositCount: 0, depositCash: 0 };
+      if (!sheetByRep[row.sp]) sheetByRep[row.sp] = { contract: 0, cash: 0, newCash: 0, units: 0, depositCount: 0, depositCash: 0 };
       sheetByRep[row.sp].cash += (row.c || 0);           // total cash incl. PP installments
       if (!row.pp) {
+        sheetByRep[row.sp].newCash += (row.c || 0);       // upfront cash, deposits included
         if (dep) {
           sheetByRep[row.sp].depositCount += 1;
           sheetByRep[row.sp].depositCash += (row.c || 0);
@@ -634,9 +635,10 @@ function filterAndAggregate(range) {
   // Attach per-rep sheet totals so leaderboard rows can access r.sheetContract / r.sheetCash / r.sheetUnits
   for (const rep in byRep) {
     const firstLower = (rep || '').trim().split(/\s+/)[0].toLowerCase();
-    const s = sheetByRep[firstLower] || { contract: 0, cash: 0, units: 0, depositCount: 0, depositCash: 0 };
+    const s = sheetByRep[firstLower] || { contract: 0, cash: 0, newCash: 0, units: 0, depositCount: 0, depositCash: 0 };
     byRep[rep].sheetContract = s.contract;
     byRep[rep].sheetCash = s.cash;
+    byRep[rep].sheetNewCash = s.newCash;
     byRep[rep].sheetUnits = s.units;
     byRep[rep].sheetDeposits = s.depositCount;
     byRep[rep].sheetDepositCash = s.depositCash;
@@ -771,6 +773,7 @@ function render() {
       <td>${medal(ranks.contract[r.rep], r.contract)}${fmtCurrency(r.contract)}</td>
       <td>${fmtCurrency(r.sheetContract)}</td>
       <td>${fmtCurrency(r.cash)}</td>
+      <td>${fmtCurrency(r.sheetNewCash)}</td>
       <td>${fmtCurrency(r.sheetCash)}</td>
       <td>${fmtCurrency(r.revPerCall)}</td>
       <td>${r.dials.toLocaleString()}</td>
@@ -804,6 +807,7 @@ function render() {
           <th class="${thClass('contract')}" data-sort="contract">Contract $ (AT)</th>
           <th class="${thClass('sheetContract')}" data-sort="sheetContract">Contract $ (GS)</th>
           <th class="${thClass('cash')}" data-sort="cash">New Cash (AT)</th>
+          <th class="${thClass('sheetNewCash')}" data-sort="sheetNewCash">New Cash (GS)</th>
           <th class="${thClass('sheetCash')}" data-sort="sheetCash">Total Cash (GS)</th>
           <th class="${thClass('revPerCall')}" data-sort="revPerCall">Revenue / Call</th>
           <th class="${thClass('dials')}" data-sort="dials">Dials</th>
@@ -830,6 +834,7 @@ function render() {
           <td>${fmtCurrency(team.contract)}</td>
           <td>${fmtCurrency(team.sheetContract)}</td>
           <td>${fmtCurrency(team.cash)}</td>
+          <td>${fmtCurrency(team.newCashCollected)}</td>
           <td>${fmtCurrency(team.totalCashCollected)}</td>
           <td>${fmtCurrency(team.revPerCall)}</td>
           <td>${team.dials.toLocaleString()}</td>
