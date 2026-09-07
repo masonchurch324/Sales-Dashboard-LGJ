@@ -2276,7 +2276,9 @@ function renderOffersPerDayChart() {
   }
 
   // Stats table: one row per rep, /day averages for all four metrics
-  const allReps = Object.keys(repAgg).sort((a, b) => repAgg[b].sums.offersMade - repAgg[a].sums.offersMade);
+  const allReps = Object.keys(repAgg)
+    .filter(r2 => PER_DAY_METRICS.some(([k]) => repAgg[r2].sums[k] > 0))
+    .sort((a, b) => repAgg[b].sums.offersMade - repAgg[a].sums.offersMade);
   const statsEl = document.getElementById('perDayStats');
   if (statsEl) {
     if (allReps.length) {
@@ -2334,15 +2336,6 @@ function renderOffersPerDayChart() {
   });
   const dayTotals = labels.map(d => byDayRep[d]
     ? Object.values(byDayRep[d]).reduce((a, b) => a + b, 0) : null);
-  const rolling = dayTotals.map((_, i) => {
-    const win = dayTotals.slice(Math.max(0, i - 6), i + 1).filter(v => v !== null);
-    return win.length ? win.reduce((a, b) => a + b, 0) / win.length : null;
-  });
-  datasets.push({
-    type: 'line', label: '7-day avg', data: rolling,
-    borderColor: 'rgba(255,90,170,0.9)', borderDash: [6, 4], borderWidth: 2,
-    pointRadius: 0, tension: 0.35, fill: false, spanGaps: true, stack: 'avg', order: 0,
-  });
   if (metric === 'offersMade' && reps.length) {
     const happyTeam = 3 * reps.length;
     datasets.push({
@@ -2376,8 +2369,7 @@ function renderOffersPerDayChart() {
             const dt = new Date(iso + 'T12:00:00');
             return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
           },
-          label: ctx => ctx.dataset.type === 'line'
-            ? `7-day avg: ${(ctx.parsed.y ?? 0).toFixed(1)}/day`
+          label: ctx => ctx.dataset.type === 'line' ? null
             : `${ctx.dataset.label.replace(/ \(\d+\)$/, '')}: ${ctx.parsed.y ?? 'no EOD'}`,
           footer: items => {
             const t = dayTotals[items[0].dataIndex];
