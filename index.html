@@ -2204,21 +2204,43 @@ function buildSalesListSection() {
 }
 
 
-// ===== Offers Per Closer Per Day (Overview tab) =====
-// Mason's #1 leading indicator to revenue. Source: Airtable EOD "Offers Made"
-// (no offer field exists in the post-call form yet). Respects date range + rep filter.
+// ===== Per-Day Metrics (Overview tab) =====
+// Daily funnel per closer from Airtable EODs: Slots Open, Scheduled, Live, Offers.
+// All /day averages divide by each rep's EOD-FILED days, never calendar days.
+// Jonathan Walker excluded (off the team). Happy place: 3+ offers/closer/day.
 const OFFER_REP_COLORS = {
   'Tyler Hoff':     ['rgba(0,208,132,0.75)',  'rgba(0,208,132,1)'],
   'Ian Kirk':       ['rgba(99,179,237,0.75)', 'rgba(99,179,237,1)'],
   'Daniel Hussain': ['rgba(255,210,70,0.75)', 'rgba(255,210,70,1)'],
 };
+const PER_DAY_METRICS = [
+  ['slotsOpen',  'Slots Open'],
+  ['scheduled',  'Scheduled'],
+  ['live',       'Live Calls'],
+  ['offersMade', 'Offers'],
+];
+let __perDayMetric = 'offersMade';
+function setPerDayMetric(m) {
+  __perDayMetric = m;
+  renderOffersPerDayChart();
+}
+
 function buildOffersPerDaySection() {
+  const btns = PER_DAY_METRICS.map(([k, label]) =>
+    `<button data-m="${k}" onclick="setPerDayMetric('${k}')"
+       style="background:transparent;border:1px solid #232a3d;border-radius:6px;color:#8a93a6;
+              padding:5px 12px;font-size:12px;cursor:pointer">${label}</button>`).join('');
   return `
-    <div class="section-title" style="margin-top:32px">Offers Made · Per Closer Per Day</div>
+    <div class="section-title" style="margin-top:32px">Per-Day Metrics · Slots / Scheduled / Live / Offers</div>
     <div class="chart-card">
+      <div id="perDayStats" style="margin-bottom:12px;overflow-x:auto"></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em">Chart:</span>
+        <span id="perDayMetricBtns" style="display:flex;gap:6px;flex-wrap:wrap">${btns}</span>
+      </div>
       <div id="offersDayHeadline" style="margin-bottom:12px;font-size:13px;color:var(--text-dim);min-height:20px"></div>
       <canvas id="offersDayChart" style="max-height:300px"></canvas>
-      <div class="chart-note">Source: EOD self-reports (Airtable "Offers Made"). Days with no EOD filed show as gaps, not zeros. Offer rate = offers ÷ live calls for the selected range.</div>
+      <div class="chart-note">Source: EOD self-reports (Airtable). "/day" always means per EOD-filed day — days with no EOD show as gaps, not zeros. Offer rate = offers ÷ live calls for the range. Happy place = 3+ offers per closer per day.</div>
     </div>
   `;
 }
@@ -2229,24 +2251,68 @@ function renderOffersPerDayChart() {
   if (!canvas || typeof allRecords === 'undefined') return;
   const startStr = fmtDate(currentRange.start);
   const endStr = fmtDate(currentRange.end);
+  const metric = __perDayMetric;
+  const metricLabel = (PER_DAY_METRICS.find(m => m[0] === metric) || ['', 'Offers'])[1];
 
-  const byDayRep = {};
-  const totals = {};
-  let liveTotal = 0;
+  // Aggregate all four metrics per rep (for the stats table) + daily series for the selected one
+  const byDayRep = {};                 // date -> rep -> selected-metric value
+  const repAgg = {};                   // rep -> { days:Set, sums: {metricKey: n} }
+  let liveTotal = 0, offersTotal = 0;
   for (const rec of allRecords) {
     const f = rec.fields;
     const date = f[FIELDS.date];
     const rep = repName(f[FIELDS.rep]);
     if (!date || !rep || date < startStr || date > endStr) continue;
-    if (rep === 'Jonathan Walker') continue;  // off the team — keep his old EODs out of this chart
+    if (rep === 'Jonathan Walker') continue;  // off the team
     if (currentRepFilter !== 'all' && rep !== currentRepFilter) continue;
+    if (!repAgg[rep]) repAgg[rep] = { days: new Set(), sums: { slotsOpen: 0, scheduled: 0, live: 0, offersMade: 0 } };
+    repAgg[rep].days.add(date);
+    for (const [k] of PER_DAY_METRICS) repAgg[rep].sums[k] += f[FIELDS[k]] || 0;
     if (!byDayRep[date]) byDayRep[date] = {};
     if (byDayRep[date][rep] === undefined) byDayRep[date][rep] = 0;
-    byDayRep[date][rep] += f[FIELDS.offersMade] || 0;
-    totals[rep] = (totals[rep] || 0) + (f[FIELDS.offersMade] || 0);
+    byDayRep[date][rep] += f[FIELDS[metric]] || 0;
     liveTotal += f[FIELDS.live] || 0;
+    offersTotal += f[FIELDS.offersMade] || 0;
   }
 
+  // Stats table: one row per rep, /day averages for all four metrics
+  const allReps = Object.keys(repAgg).sort((a, b) => repAgg[b].sums.offersMade - repAgg[a].sums.offersMade);
+  const statsEl = document.getElementById('perDayStats');
+  if (statsEl) {
+    if (allReps.length) {
+      const head = PER_DAY_METRICS.map(([, l]) => `<th style="text-align:right;padding:4px 12px;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:0.05em">${l}/day</th>`).join('');
+      const rows = allReps.map(rep => {
+        const a = repAgg[rep];
+        const n = a.days.size || 1;
+        const cells = PER_DAY_METRICS.map(([k]) => {
+          const avg = a.sums[k] / n;
+          const isOffers = k === 'offersMade';
+          const color = isOffers ? (avg >= 3 ? 'rgba(0,208,132,1)' : 'rgba(255,140,0,1)') : 'var(--text)';
+          return `<td style="text-align:right;padding:4px 12px;font-weight:${isOffers ? 700 : 500};color:${color}">${avg.toFixed(1)}</td>`;
+        }).join('');
+        return `<tr>
+          <td style="padding:4px 12px 4px 0;font-weight:600;color:var(--text)">${rep.split(' ')[0]}</td>
+          ${cells}
+          <td style="text-align:right;padding:4px 12px;color:var(--text-dim);font-size:12px">${a.days.size} EOD day${a.days.size === 1 ? '' : 's'}</td>
+        </tr>`;
+      }).join('');
+      statsEl.innerHTML = `<table style="border-collapse:collapse;font-size:13px">
+        <thead><tr><th></th>${head}<th style="text-align:right;padding:4px 12px;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:0.05em">Reported</th></tr></thead>
+        <tbody>${rows}</tbody></table>`;
+    } else {
+      statsEl.innerHTML = '';
+    }
+  }
+
+  // Button active states
+  document.querySelectorAll('#perDayMetricBtns button').forEach(b => {
+    const on = b.dataset.m === metric;
+    b.style.background = on ? 'rgba(0,208,132,0.12)' : 'transparent';
+    b.style.borderColor = on ? 'rgba(0,208,132,0.8)' : '#232a3d';
+    b.style.color = on ? 'rgba(0,208,132,1)' : '#8a93a6';
+  });
+
+  // Daily axis
   const labels = [];
   const today = fmtDate(new Date());
   const end = endStr < today ? endStr : today;
@@ -2254,19 +2320,18 @@ function renderOffersPerDayChart() {
     labels.push(fmtDate(d));
   }
 
-  // Only reps who actually made offers in range (drops 0-offer noise from the legend)
-  const reps = Object.keys(totals).filter(r2 => (totals[r2] || 0) > 0)
-    .sort((a, b) => (totals[b] || 0) - (totals[a] || 0));
+  const totals = {};
+  for (const rep of allReps) totals[rep] = repAgg[rep].sums[metric];
+  const reps = allReps.filter(r2 => (totals[r2] || 0) > 0);
   const datasets = reps.map(rep => {
     const colors = OFFER_REP_COLORS[rep] || ['rgba(150,160,180,0.7)', 'rgba(150,160,180,1)'];
     return {
       label: `${rep} (${totals[rep] || 0})`,
       data: labels.map(d => (byDayRep[d] && byDayRep[d][rep] !== undefined) ? byDayRep[d][rep] : null),
       backgroundColor: colors[0], borderColor: colors[1], borderWidth: 0, borderRadius: 4,
-      maxBarThickness: 34, stack: 'offers',
+      maxBarThickness: 34, stack: 'metric',
     };
   });
-  // 7-day rolling average of team offers/day (counting only days that had an EOD)
   const dayTotals = labels.map(d => byDayRep[d]
     ? Object.values(byDayRep[d]).reduce((a, b) => a + b, 0) : null);
   const rolling = dayTotals.map((_, i) => {
@@ -2278,29 +2343,22 @@ function renderOffersPerDayChart() {
     borderColor: 'rgba(255,90,170,0.9)', borderDash: [6, 4], borderWidth: 2,
     pointRadius: 0, tension: 0.35, fill: false, spanGaps: true, stack: 'avg', order: 0,
   });
-  // Happy place: 3+ offers per closer per day -> team line at 3 x active closers
-  const happyTeam = 3 * reps.length;
-  if (reps.length) datasets.push({
-    type: 'line', label: `Happy place (${happyTeam}/day team)`, data: labels.map(() => happyTeam),
-    borderColor: 'rgba(150,160,180,0.6)', borderDash: [2, 4], borderWidth: 2,
-    pointRadius: 0, fill: false, stack: 'target', order: 0,
-  });
+  if (metric === 'offersMade' && reps.length) {
+    const happyTeam = 3 * reps.length;
+    datasets.push({
+      type: 'line', label: `Happy place (${happyTeam}/day team)`, data: labels.map(() => happyTeam),
+      borderColor: 'rgba(150,160,180,0.6)', borderDash: [2, 4], borderWidth: 2,
+      pointRadius: 0, fill: false, stack: 'target', order: 0,
+    });
+  }
 
   const grandTotal = reps.reduce((s, r2) => s + (totals[r2] || 0), 0);
-  const daysWithData = Object.keys(byDayRep).length;
-  const offerRate = liveTotal ? grandTotal / liveTotal * 100 : 0;
+  const offerRate = liveTotal ? offersTotal / liveTotal * 100 : 0;
   const headline = document.getElementById('offersDayHeadline');
-  const repChips = reps.map(rep => {
-    const repDays = labels.filter(d => byDayRep[d] && byDayRep[d][rep] !== undefined).length;
-    const avg = repDays ? (totals[rep] || 0) / repDays : 0;
-    const ok = avg >= 3;
-    const first = rep.split(' ')[0];
-    return `<span style="color:${ok ? 'rgba(0,208,132,1)' : 'rgba(255,140,0,1)'};font-weight:700">${first} ${avg.toFixed(1)}/day</span> <span style="color:var(--text-dim);font-size:12px">(${repDays} EOD day${repDays === 1 ? '' : 's'})</span>`;
-  }).join(' · ');
-  if (headline) headline.innerHTML = daysWithData
-    ? `<strong style="color:rgba(255,90,170,1);font-size:17px">${grandTotal}</strong> offers ·
-       ${repChips} <span style="color:var(--text-dim)">(happy place: 3+/closer/day)</span> ·
-       offer rate <strong style="color:var(--text)">${offerRate.toFixed(0)}%</strong> of ${liveTotal} live calls`
+  if (headline) headline.innerHTML = allReps.length
+    ? `Showing <strong style="color:var(--text)">${metricLabel}</strong> ·
+       <strong style="color:rgba(255,90,170,1);font-size:17px">${grandTotal}</strong> total in range ·
+       offer rate <strong style="color:var(--text)">${offerRate.toFixed(0)}%</strong> (${offersTotal} offers / ${liveTotal} live)`
     : 'No EOD data in the selected range.';
 
   if (__offersDayChart) __offersDayChart.destroy();
@@ -2334,10 +2392,10 @@ function renderOffersPerDayChart() {
                  const iso = labels[i];
                  if (!iso) return '';
                  const dt = new Date(iso + 'T12:00:00');
-                 return dt.getDay() === 1 ? iso.slice(5) : '';  // label Mondays only
+                 return dt.getDay() === 1 ? iso.slice(5) : '';
                } } },
         y: { stacked: true, beginAtZero: true, ticks: { color: '#8a93a6', precision: 0 }, grid: { color: '#232a3d' },
-             title: { display: true, text: 'Offers made', color: '#8a93a6' } }
+             title: { display: true, text: metricLabel, color: '#8a93a6' } }
       }
     }
   });
