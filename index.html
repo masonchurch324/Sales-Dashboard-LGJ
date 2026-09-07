@@ -2294,7 +2294,7 @@ function renderOffersPerDayChart() {
     const avg = repDays ? (totals[rep] || 0) / repDays : 0;
     const ok = avg >= 3;
     const first = rep.split(' ')[0];
-    return `<span style="color:${ok ? 'rgba(0,208,132,1)' : 'rgba(255,140,0,1)'};font-weight:700">${first} ${avg.toFixed(1)}/day</span>`;
+    return `<span style="color:${ok ? 'rgba(0,208,132,1)' : 'rgba(255,140,0,1)'};font-weight:700">${first} ${avg.toFixed(1)}/day</span> <span style="color:var(--text-dim);font-size:12px">(${repDays} EOD day${repDays === 1 ? '' : 's'})</span>`;
   }).join(' · ');
   if (headline) headline.innerHTML = daysWithData
     ? `<strong style="color:rgba(255,90,170,1);font-size:17px">${grandTotal}</strong> offers ·
