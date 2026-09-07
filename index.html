@@ -2253,24 +2253,52 @@ function renderOffersPerDayChart() {
     labels.push(fmtDate(d));
   }
 
-  const reps = Object.keys(totals).sort((a, b) => (totals[b] || 0) - (totals[a] || 0));
+  // Only reps who actually made offers in range (drops 0-offer noise from the legend)
+  const reps = Object.keys(totals).filter(r2 => (totals[r2] || 0) > 0)
+    .sort((a, b) => (totals[b] || 0) - (totals[a] || 0));
   const datasets = reps.map(rep => {
     const colors = OFFER_REP_COLORS[rep] || ['rgba(150,160,180,0.7)', 'rgba(150,160,180,1)'];
     return {
       label: `${rep} (${totals[rep] || 0})`,
       data: labels.map(d => (byDayRep[d] && byDayRep[d][rep] !== undefined) ? byDayRep[d][rep] : null),
-      backgroundColor: colors[0], borderColor: colors[1], borderWidth: 1.5, borderRadius: 3,
-      maxBarThickness: 22,
+      backgroundColor: colors[0], borderColor: colors[1], borderWidth: 0, borderRadius: 4,
+      maxBarThickness: 34, stack: 'offers',
     };
+  });
+  // 7-day rolling average of team offers/day (counting only days that had an EOD)
+  const dayTotals = labels.map(d => byDayRep[d]
+    ? Object.values(byDayRep[d]).reduce((a, b) => a + b, 0) : null);
+  const rolling = dayTotals.map((_, i) => {
+    const win = dayTotals.slice(Math.max(0, i - 6), i + 1).filter(v => v !== null);
+    return win.length ? win.reduce((a, b) => a + b, 0) / win.length : null;
+  });
+  datasets.push({
+    type: 'line', label: '7-day avg', data: rolling,
+    borderColor: 'rgba(255,90,170,0.9)', borderDash: [6, 4], borderWidth: 2,
+    pointRadius: 0, tension: 0.35, fill: false, spanGaps: true, stack: 'avg', order: 0,
+  });
+  // Happy place: 3+ offers per closer per day -> team line at 3 x active closers
+  const happyTeam = 3 * reps.length;
+  if (reps.length) datasets.push({
+    type: 'line', label: `Happy place (${happyTeam}/day team)`, data: labels.map(() => happyTeam),
+    borderColor: 'rgba(150,160,180,0.6)', borderDash: [2, 4], borderWidth: 2,
+    pointRadius: 0, fill: false, stack: 'target', order: 0,
   });
 
   const grandTotal = reps.reduce((s, r2) => s + (totals[r2] || 0), 0);
   const daysWithData = Object.keys(byDayRep).length;
   const offerRate = liveTotal ? grandTotal / liveTotal * 100 : 0;
   const headline = document.getElementById('offersDayHeadline');
+  const repChips = reps.map(rep => {
+    const repDays = labels.filter(d => byDayRep[d] && byDayRep[d][rep] !== undefined).length;
+    const avg = repDays ? (totals[rep] || 0) / repDays : 0;
+    const ok = avg >= 3;
+    const first = rep.split(' ')[0];
+    return `<span style="color:${ok ? 'rgba(0,208,132,1)' : 'rgba(255,140,0,1)'};font-weight:700">${first} ${avg.toFixed(1)}/day</span>`;
+  }).join(' · ');
   if (headline) headline.innerHTML = daysWithData
     ? `<strong style="color:rgba(255,90,170,1);font-size:17px">${grandTotal}</strong> offers ·
-       <strong style="color:var(--text)">${(grandTotal / daysWithData).toFixed(1)}/day</strong> (${daysWithData} EOD days) ·
+       ${repChips} <span style="color:var(--text-dim)">(happy place: 3+/closer/day)</span> ·
        offer rate <strong style="color:var(--text)">${offerRate.toFixed(0)}%</strong> of ${liveTotal} live calls`
     : 'No EOD data in the selected range.';
 
@@ -2284,12 +2312,30 @@ function renderOffersPerDayChart() {
         legend: { labels: { color: '#e6e9ef', font: { size: 11 } } },
         datalabels: { display: false },
         tooltip: { callbacks: {
-          title: items => labels[items[0].dataIndex],
-          label: ctx => `${ctx.dataset.label.replace(/ \(\d+\)$/, '')}: ${ctx.parsed.y ?? 'no EOD'}` } }
+          title: items => {
+            const iso = labels[items[0].dataIndex];
+            const dt = new Date(iso + 'T12:00:00');
+            return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          },
+          label: ctx => ctx.dataset.type === 'line'
+            ? `7-day avg: ${(ctx.parsed.y ?? 0).toFixed(1)}/day`
+            : `${ctx.dataset.label.replace(/ \(\d+\)$/, '')}: ${ctx.parsed.y ?? 'no EOD'}`,
+          footer: items => {
+            const t = dayTotals[items[0].dataIndex];
+            return t !== null ? `Day total: ${t}` : 'No EOD filed';
+          } },
+          footerColor: '#e6e9ef' }
       },
       scales: {
-        x: { stacked: false, ticks: { color: '#8a93a6', maxTicksLimit: 20 }, grid: { color: '#232a3d' } },
-        y: { beginAtZero: true, ticks: { color: '#8a93a6', precision: 0 }, grid: { color: '#232a3d' },
+        x: { stacked: true, grid: { color: '#232a3d' },
+             ticks: { color: '#8a93a6', autoSkip: false, maxRotation: 0,
+               callback: function(val, i) {
+                 const iso = labels[i];
+                 if (!iso) return '';
+                 const dt = new Date(iso + 'T12:00:00');
+                 return dt.getDay() === 1 ? iso.slice(5) : '';  // label Mondays only
+               } } },
+        y: { stacked: true, beginAtZero: true, ticks: { color: '#8a93a6', precision: 0 }, grid: { color: '#232a3d' },
              title: { display: true, text: 'Offers made', color: '#8a93a6' } }
       }
     }
