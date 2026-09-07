@@ -2238,6 +2238,7 @@ function renderOffersPerDayChart() {
     const date = f[FIELDS.date];
     const rep = repName(f[FIELDS.rep]);
     if (!date || !rep || date < startStr || date > endStr) continue;
+    if (rep === 'Jonathan Walker') continue;  // off the team — keep his old EODs out of this chart
     if (currentRepFilter !== 'all' && rep !== currentRepFilter) continue;
     if (!byDayRep[date]) byDayRep[date] = {};
     if (byDayRep[date][rep] === undefined) byDayRep[date][rep] = 0;
