@@ -744,7 +744,39 @@ function render() {
     return sortDir === 'desc' ? bv - av : av - bv;
   });
 
-  const kpis = ['slotsOpen', 'scheduled', 'live', 'offersMade', 'fillRate', 'showRate', 'offerRate', 'closeRate', 'units', 'contract', 'cash', 'dials', 'pickups', 'phoneSets', 'dmSets'];
+  // Measured dialer stats (WAVV + GHL combined) for the selected range, joined to reps
+  // by first name; dialer callers that match no rep get their own rows so totals stay honest.
+  const mByWho = {};
+  if (typeof DIALER_DAILY !== 'undefined') {
+    const s0 = fmtDate(currentRange.start), e0 = fmtDate(currentRange.end);
+    for (const r of DIALER_DAILY) {
+      if (r.d < s0 || r.d > e0) continue;
+      const b = mByWho[r.who] || (mByWho[r.who] = { n: 0, c2: 0, s: 0 });
+      b.n += r.n; b.c2 += r.c2; b.s += r.s;
+    }
+  }
+  const mUsed = new Set();
+  for (const r of sorted) {
+    r.mDials = 0; r.mC2 = 0; r.mSecs = 0;
+    const first = (r.rep || '').split(/\s+/)[0].toLowerCase();
+    for (const who in mByWho) {
+      if ((who || '').split(/\s+/)[0].toLowerCase() === first) {
+        r.mDials += mByWho[who].n; r.mC2 += mByWho[who].c2; r.mSecs += mByWho[who].s;
+        mUsed.add(who);
+      }
+    }
+  }
+  const dialerOnlyRows = Object.keys(mByWho).filter(w => !mUsed.has(w)).map(w => ({
+    rep: w, mDials: mByWho[w].n, mC2: mByWho[w].c2, mSecs: mByWho[w].s,
+    phoneSets: 0, dmSets: 0,
+  }));
+  const outboundSorted = [...sorted, ...dialerOnlyRows];
+  const teamM = { n: 0, c2: 0, s: 0 };
+  for (const w in mByWho) { teamM.n += mByWho[w].n; teamM.c2 += mByWho[w].c2; teamM.s += mByWho[w].s; }
+  const fmtTalk = sec => { const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
+                           return h ? `${h}h ${String(m).padStart(2,'0')}m` : `${m}m`; };
+
+  const kpis = ['slotsOpen', 'scheduled', 'live', 'offersMade', 'fillRate', 'showRate', 'offerRate', 'closeRate', 'units', 'contract', 'sheetContract', 'cash', 'dials', 'pickups', 'phoneSets', 'dmSets'];
   const ranks = {};
   for (const k of kpis) {
     const sortedByK = [...reps].sort((a,b) => (b[k]||0) - (a[k]||0));
@@ -762,20 +794,14 @@ function render() {
   }
 
   // Split into two stacked boards (Mason: no more sideways scrolling).
-  const outboundRows = sorted.map(r => `
+  const outboundRows = outboundSorted.filter(r => (r.mDials || r.phoneSets || r.dmSets)).map(r => `
     <tr>
       <td class="rep-name">${r.rep}</td>
-      <td>${r.slotsOpen.toLocaleString()}</td>
-      <td>${r.scheduled.toLocaleString()}</td>
-      <td>${r.live.toLocaleString()}</td>
-      <td>${r.offersMade.toLocaleString()}</td>
-      <td>${fmtPct(r.fillRate)}</td>
-      <td>${fmtPct(r.showRate)}</td>
-      <td>${fmtPct(r.offerRate)}</td>
-      <td>${r.dials.toLocaleString()}</td>
-      <td>${r.pickups.toLocaleString()}</td>
-      <td>${r.phoneSets.toLocaleString()}</td>
-      <td>${r.dmSets.toLocaleString()}</td>
+      <td>${(r.mDials || 0).toLocaleString()}</td>
+      <td>${(r.mC2 || 0).toLocaleString()}</td>
+      <td>${(r.phoneSets || 0).toLocaleString()}</td>
+      <td>${(r.dmSets || 0).toLocaleString()}</td>
+      <td>${fmtTalk(r.mSecs || 0)}</td>
     </tr>
   `).join('');
 
@@ -784,8 +810,7 @@ function render() {
       <td class="rep-name">${r.rep}</td>
       <td>${fmtPct(r.closeRate)}</td>
       <td>${r.sheetUnits}</td>
-      <td>${medal(ranks.contract[r.rep], r.contract)}${fmtCurrency(r.contract)}</td>
-      <td>${fmtCurrency(r.sheetContract)}</td>
+      <td>${medal(ranks.sheetContract[r.rep], r.sheetContract)}${fmtCurrency(r.sheetContract)}</td>
       <td>${fmtCurrency(r.cash)}</td>
       <td>${fmtCurrency(r.sheetNewCash)}</td>
       <td>${fmtCurrency(r.sheetCash)}</td>
@@ -795,39 +820,27 @@ function render() {
 
   const totalRowStyle = 'border-top:2px solid var(--border,#2a2a2a);background:rgba(255,255,255,0.03);font-weight:600;';
   const tableHtml = `
-    <div class="section-title">Outbound Stats</div>
+    <div class="section-title">Outbound Stats <span style="font-weight:400;font-size:11px;color:var(--text-dim);text-transform:none;letter-spacing:0">— Dials, Convos &gt;2m (≥120s) and Talk Time measured from WAVV + GHL dialers; Phone/DM Sets self-reported (EOD)</span></div>
     <div class="table-wrap"><table>
       <thead>
         <tr>
           <th>Rep</th>
-          <th class="${thClass('slotsOpen')}" data-sort="slotsOpen">Slots</th>
-          <th class="${thClass('scheduled')}" data-sort="scheduled">Scheduled</th>
-          <th class="${thClass('live')}" data-sort="live">Live</th>
-          <th class="${thClass('offersMade')}" data-sort="offersMade">Offers</th>
-          <th class="${thClass('fillRate')}" data-sort="fillRate">Fill Rate</th>
-          <th class="${thClass('showRate')}" data-sort="showRate">Show Rate</th>
-          <th class="${thClass('offerRate')}" data-sort="offerRate">Offer Rate</th>
-          <th class="${thClass('dials')}" data-sort="dials">Dials</th>
-          <th class="${thClass('pickups')}" data-sort="pickups">Pickups</th>
+          <th class="${thClass('mDials')}" data-sort="mDials">Dials</th>
+          <th class="${thClass('mC2')}" data-sort="mC2">Convos &gt;2m</th>
           <th class="${thClass('phoneSets')}" data-sort="phoneSets">Phone Sets</th>
           <th class="${thClass('dmSets')}" data-sort="dmSets">DM Sets</th>
+          <th class="${thClass('mSecs')}" data-sort="mSecs">Talk Time</th>
         </tr>
       </thead>
       <tbody>${outboundRows}</tbody>
       <tfoot>
         <tr style="${totalRowStyle}">
           <td class="rep-name" style="font-weight:700;">Total</td>
-          <td>${team.slotsOpen.toLocaleString()}</td>
-          <td>${team.scheduled.toLocaleString()}</td>
-          <td>${team.live.toLocaleString()}</td>
-          <td>${team.offersMade.toLocaleString()}</td>
-          <td>${fmtPct(team.fillRate)}</td>
-          <td>${fmtPct(team.showRate)}</td>
-          <td>${fmtPct(team.offerRate)}</td>
-          <td>${team.dials.toLocaleString()}</td>
-          <td>${team.pickups.toLocaleString()}</td>
+          <td>${teamM.n.toLocaleString()}</td>
+          <td>${teamM.c2.toLocaleString()}</td>
           <td>${team.phoneSets.toLocaleString()}</td>
           <td>${team.dmSets.toLocaleString()}</td>
+          <td>${fmtTalk(teamM.s)}</td>
         </tr>
       </tfoot>
     </table></div>
@@ -839,8 +852,7 @@ function render() {
           <th>Rep</th>
           <th class="${thClass('closeRate')}" data-sort="closeRate">Close Rate</th>
           <th class="${thClass('sheetUnits')}" data-sort="sheetUnits">Units</th>
-          <th class="${thClass('contract')}" data-sort="contract">Contract $ (AT)</th>
-          <th class="${thClass('sheetContract')}" data-sort="sheetContract">Contract $ (GS)</th>
+          <th class="${thClass('sheetContract')}" data-sort="sheetContract">Contract $</th>
           <th class="${thClass('cash')}" data-sort="cash">New Cash (AT)</th>
           <th class="${thClass('sheetNewCash')}" data-sort="sheetNewCash">New Cash (GS)</th>
           <th class="${thClass('sheetCash')}" data-sort="sheetCash">Total Cash (GS)</th>
@@ -853,7 +865,6 @@ function render() {
           <td class="rep-name" style="font-weight:700;">Total</td>
           <td>${fmtPct(team.closeRate)}</td>
           <td>${team.sheetUnits}</td>
-          <td>${fmtCurrency(team.contract)}</td>
           <td>${fmtCurrency(team.sheetContract)}</td>
           <td>${fmtCurrency(team.cash)}</td>
           <td>${fmtCurrency(team.newCashCollected)}</td>
