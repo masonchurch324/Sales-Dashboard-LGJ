@@ -757,7 +757,12 @@ function render() {
     return '';
   }
 
-  const rowsHtml = sorted.map(r => `
+  function thClass(key) {
+    return sortKey === key ? `sort-${sortDir}` : '';
+  }
+
+  // Split into two stacked boards (Mason: no more sideways scrolling).
+  const outboundRows = sorted.map(r => `
     <tr>
       <td class="rep-name">${r.rep}</td>
       <td>${r.slotsOpen.toLocaleString()}</td>
@@ -767,6 +772,16 @@ function render() {
       <td>${fmtPct(r.fillRate)}</td>
       <td>${fmtPct(r.showRate)}</td>
       <td>${fmtPct(r.offerRate)}</td>
+      <td>${r.dials.toLocaleString()}</td>
+      <td>${r.pickups.toLocaleString()}</td>
+      <td>${r.phoneSets.toLocaleString()}</td>
+      <td>${r.dmSets.toLocaleString()}</td>
+    </tr>
+  `).join('');
+
+  const closingRows = sorted.map(r => `
+    <tr>
+      <td class="rep-name">${r.rep}</td>
       <td>${fmtPct(r.closeRate)}</td>
       <td>${r.sheetUnits}</td>
       <td>${medal(ranks.contract[r.rep], r.contract)}${fmtCurrency(r.contract)}</td>
@@ -775,19 +790,12 @@ function render() {
       <td>${fmtCurrency(r.sheetNewCash)}</td>
       <td>${fmtCurrency(r.sheetCash)}</td>
       <td>${fmtCurrency(r.revPerCall)}</td>
-      <td>${r.dials.toLocaleString()}</td>
-      <td>${r.pickups.toLocaleString()}</td>
-      <td>${r.phoneSets.toLocaleString()}</td>
-      <td>${r.dmSets.toLocaleString()}</td>
     </tr>
   `).join('');
 
-  function thClass(key) {
-    return sortKey === key ? `sort-${sortDir}` : '';
-  }
-
+  const totalRowStyle = 'border-top:2px solid var(--border,#2a2a2a);background:rgba(255,255,255,0.03);font-weight:600;';
   const tableHtml = `
-    <div class="section-title">Leaderboard</div>
+    <div class="section-title">Outbound Stats</div>
     <div class="table-wrap"><table>
       <thead>
         <tr>
@@ -799,23 +807,15 @@ function render() {
           <th class="${thClass('fillRate')}" data-sort="fillRate">Fill Rate</th>
           <th class="${thClass('showRate')}" data-sort="showRate">Show Rate</th>
           <th class="${thClass('offerRate')}" data-sort="offerRate">Offer Rate</th>
-          <th class="${thClass('closeRate')}" data-sort="closeRate">Close Rate</th>
-          <th class="${thClass('sheetUnits')}" data-sort="sheetUnits">Units</th>
-          <th class="${thClass('contract')}" data-sort="contract">Contract $ (AT)</th>
-          <th class="${thClass('sheetContract')}" data-sort="sheetContract">Contract $ (GS)</th>
-          <th class="${thClass('cash')}" data-sort="cash">New Cash (AT)</th>
-          <th class="${thClass('sheetNewCash')}" data-sort="sheetNewCash">New Cash (GS)</th>
-          <th class="${thClass('sheetCash')}" data-sort="sheetCash">Total Cash (GS)</th>
-          <th class="${thClass('revPerCall')}" data-sort="revPerCall">Revenue / Call</th>
           <th class="${thClass('dials')}" data-sort="dials">Dials</th>
           <th class="${thClass('pickups')}" data-sort="pickups">Pickups</th>
           <th class="${thClass('phoneSets')}" data-sort="phoneSets">Phone Sets</th>
           <th class="${thClass('dmSets')}" data-sort="dmSets">DM Sets</th>
         </tr>
       </thead>
-      <tbody>${rowsHtml}</tbody>
+      <tbody>${outboundRows}</tbody>
       <tfoot>
-        <tr style="border-top:2px solid var(--border,#2a2a2a);background:rgba(255,255,255,0.03);font-weight:600;">
+        <tr style="${totalRowStyle}">
           <td class="rep-name" style="font-weight:700;">Total</td>
           <td>${team.slotsOpen.toLocaleString()}</td>
           <td>${team.scheduled.toLocaleString()}</td>
@@ -824,6 +824,33 @@ function render() {
           <td>${fmtPct(team.fillRate)}</td>
           <td>${fmtPct(team.showRate)}</td>
           <td>${fmtPct(team.offerRate)}</td>
+          <td>${team.dials.toLocaleString()}</td>
+          <td>${team.pickups.toLocaleString()}</td>
+          <td>${team.phoneSets.toLocaleString()}</td>
+          <td>${team.dmSets.toLocaleString()}</td>
+        </tr>
+      </tfoot>
+    </table></div>
+
+    <div class="section-title" style="margin-top:24px">Closing Stats</div>
+    <div class="table-wrap"><table>
+      <thead>
+        <tr>
+          <th>Rep</th>
+          <th class="${thClass('closeRate')}" data-sort="closeRate">Close Rate</th>
+          <th class="${thClass('sheetUnits')}" data-sort="sheetUnits">Units</th>
+          <th class="${thClass('contract')}" data-sort="contract">Contract $ (AT)</th>
+          <th class="${thClass('sheetContract')}" data-sort="sheetContract">Contract $ (GS)</th>
+          <th class="${thClass('cash')}" data-sort="cash">New Cash (AT)</th>
+          <th class="${thClass('sheetNewCash')}" data-sort="sheetNewCash">New Cash (GS)</th>
+          <th class="${thClass('sheetCash')}" data-sort="sheetCash">Total Cash (GS)</th>
+          <th class="${thClass('revPerCall')}" data-sort="revPerCall">Revenue / Call</th>
+        </tr>
+      </thead>
+      <tbody>${closingRows}</tbody>
+      <tfoot>
+        <tr style="${totalRowStyle}">
+          <td class="rep-name" style="font-weight:700;">Total</td>
           <td>${fmtPct(team.closeRate)}</td>
           <td>${team.sheetUnits}</td>
           <td>${fmtCurrency(team.contract)}</td>
@@ -832,10 +859,6 @@ function render() {
           <td>${fmtCurrency(team.newCashCollected)}</td>
           <td>${fmtCurrency(team.totalCashCollected)}</td>
           <td>${fmtCurrency(team.revPerCall)}</td>
-          <td>${team.dials.toLocaleString()}</td>
-          <td>${team.pickups.toLocaleString()}</td>
-          <td>${team.phoneSets.toLocaleString()}</td>
-          <td>${team.dmSets.toLocaleString()}</td>
         </tr>
       </tfoot>
     </table></div>
