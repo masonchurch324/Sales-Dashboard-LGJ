@@ -2271,7 +2271,7 @@ function setDialerSrc(src) {
 }
 
 function buildDialerActivitySection() {
-  const btns = [['both', 'Both'], ['wavv', 'Wave Dialer'], ['ghl', 'GHL Dialer']].map(([k, label]) =>
+  const btns = [['both', 'Both'], ['wavv', 'Wave Dialer'], ['ghl', 'GHL Dialer'], ['dialerio', 'Dialer IO']].map(([k, label]) =>
     `<button data-src="${k}" onclick="setDialerSrc('${k}')"
        style="background:transparent;border:1px solid #232a3d;border-radius:6px;color:#8a93a6;
               padding:5px 12px;font-size:12px;cursor:pointer">${label}</button>`).join('');
@@ -2284,7 +2284,7 @@ function buildDialerActivitySection() {
       </div>
       <div id="dialerTiles" style="margin-bottom:12px"></div>
       <div id="dialerTable" style="overflow-x:auto"></div>
-      <div class="chart-note">Measured by the dialers, not self-reported. Wave pickups = WAVV's human-answer detection; GHL pickups = call connected ≥ 60s. Convos = ≥ 2 minutes. Wave dials exclude automatic voicemail-retry legs. Data refreshes with the daily 7AM bake.</div>
+      <div class="chart-note">Measured by the dialers, not self-reported. Wave pickups = WAVV's human-answer detection; GHL pickups = call connected ≥ 60s; Dialer IO pickups = its own pickup count. Convos = ≥ 2 minutes (Dialer IO reports no durations, so it contributes dials + pickups only). Wave dials exclude automatic voicemail-retry legs. Data refreshes with the daily 7AM bake.</div>
     </div>
   `;
 }
