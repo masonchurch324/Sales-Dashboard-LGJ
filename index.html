@@ -1009,7 +1009,7 @@ function renderWeekly() {
         <td>${fmtPct(team.showRate)}</td>
         <td>${fmtPct(team.closeRate)}</td>
         <td>${team.units}</td>
-        <td>${fmtCurrency(team.contract)}</td>
+        <td>${fmtCurrency(team.sheetContract)}</td>
         <td>${fmtCurrency(team.cash)}</td>
         <td>${fmtCurrency(team.revPerCall)}</td>
         <td>${team.dials.toLocaleString()}</td>
@@ -1034,8 +1034,8 @@ function renderWeekly() {
           <th>Show Rate</th>
           <th>Close Rate</th>
           <th>Units</th>
-          <th>Contract Value</th>
-          <th>New Cash</th>
+          <th title="Contract Value — Sales Tracking Google Sheet (new sales, deposit rows deduped)">Contract Value (GS)</th>
+          <th title="New Cash — self-reported Airtable EOD">New Cash (AT)</th>
           <th>Revenue / Call</th>
           <th>Dials</th>
           <th>Pickups</th>
