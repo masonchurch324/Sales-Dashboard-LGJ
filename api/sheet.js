@@ -14,12 +14,12 @@
 // Env vars:
 //   GOOGLE_SERVICE_ACCOUNT — full service-account JSON as a string
 //   SHEET_ID (optional)    — defaults to the Sales Call Tracking 2025 sheet
-//   SHEET_RANGE (optional) — defaults to "Sales Tracking!A2:M2000"
+//   SHEET_RANGE (optional) — defaults to "Sales Tracking!A2:M20000"
 
 import crypto from 'crypto';
 
 const DEFAULT_SHEET_ID = '19BQT8ki2WcTjJyhT_RRwy6_VoHAFRhbdqarJR37Kznc';
-const DEFAULT_RANGE = 'Sales Tracking!A2:M2000';
+const DEFAULT_RANGE = 'Sales Tracking!A2:M20000';
 
 // === Helpers ported from refresh_sales_tracking.py ===
 

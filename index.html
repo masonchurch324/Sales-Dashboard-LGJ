@@ -647,7 +647,7 @@ function filterAndAggregate(range) {
   // Units Sold sourced from sheet (counts new-sale rows). Contract Value stays Airtable-sourced
   // (reps enter full contract in Airtable for now; sheet is reserved for cash truth).
   team.units = team.sheetUnits;
-  team.revPerCall = team.scheduled ? team.contract / team.scheduled : 0;
+  team.revPerCall = team.scheduled ? team.sheetContract / team.scheduled : 0;  // Contract (GS) ÷ Scheduled (AT), per Mason 2026-09-14
   team.pickupRate = team.dials ? team.pickups / team.dials : 0;
 
   return { reps: Object.values(byRep), team, rowCount: filtered.length };
@@ -664,31 +664,31 @@ function render() {
 
   const teamHtml = `
     <div class="team-grid team-grid-7">
-      <div class="kpi-card">
+      <div class="kpi-card" title="Self-reported — Airtable EOD "Slots Open", summed over the date range">
         <div class="kpi-label">Slots Open</div>
         <div class="kpi-value">${team.slotsOpen.toLocaleString()}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Self-reported — Airtable EOD "Scheduled Calls", summed over the date range">
         <div class="kpi-label">Scheduled Calls</div>
         <div class="kpi-value">${team.scheduled.toLocaleString()}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Scheduled Calls ÷ Slots Open (both Airtable EOD)">
         <div class="kpi-label">Fill Rate</div>
         <div class="kpi-value">${fmtPct(team.fillRate)}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Live Calls ÷ Scheduled Calls (both Airtable EOD)">
         <div class="kpi-label">Show Rate</div>
         <div class="kpi-value">${fmtPct(team.showRate)}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Units Sold (Google Sheet) ÷ Live Calls (Airtable EOD) — mixed-source; includes off-call closes in the numerator">
         <div class="kpi-label">Close Rate</div>
         <div class="kpi-value">${fmtPct(team.closeRate)}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Sales Tracking Google Sheet — new sales only (payment plans and duplicate deposit rows excluded)">
         <div class="kpi-label">Units Sold</div>
         <div class="kpi-value">${team.units}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Sales Tracking Google Sheet — rows where a matching (email, contract) row has more cash">
         <div class="kpi-label">Deposits</div>
         <div class="kpi-value">${team.depositCount}</div>
         <div style="margin-top:6px;font-size:12px;color:var(--text-dim)">${fmtCurrency(team.depositCash)} collected</div>
@@ -696,42 +696,42 @@ function render() {
     </div>
 
     <div class="team-grid team-grid-4">
-      <div class="kpi-card">
+      <div class="kpi-card" title="Sales Tracking Google Sheet — contract value on new sales, deposit rows deduped; live-refreshes every 10 min">
         <div class="kpi-label">Contract Value</div>
         <div class="kpi-value accent">${fmtCurrency(team.sheetContract)}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Sales Tracking Google Sheet — ALL cash in range including payment-plan installments; live-refreshes every 10 min">
         <div class="kpi-label">Total Cash Collected <span style="opacity:0.6;font-weight:500;text-transform:none;letter-spacing:0;">(incl. receivables)</span></div>
         <div class="kpi-value accent">${fmtCurrency(team.totalCashCollected)}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Sales Tracking Google Sheet — upfront cash on non-payment-plan rows, deposits included">
         <div class="kpi-label">New Cash Collected <span style="opacity:0.6;font-weight:500;text-transform:none;letter-spacing:0;">(upfront, excl. payment-plan installments)</span></div>
         <div class="kpi-value accent">${fmtCurrency(team.newCashCollected)}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Contract Value (Google Sheet) ÷ Scheduled Calls (Airtable EOD)">
         <div class="kpi-label">Revenue / Call</div>
         <div class="kpi-value">${fmtCurrency(team.revPerCall)}</div>
       </div>
     </div>
 
     <div class="team-grid team-grid-5">
-      <div class="kpi-card">
+      <div class="kpi-card" title="Self-reported — Airtable EOD. Measured dials live in the Dialer Activity section below">
         <div class="kpi-label">Dials</div>
         <div class="kpi-value">${team.dials.toLocaleString()}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Self-reported — Airtable EOD. Measured pickups live in the Dialer Activity section below">
         <div class="kpi-label">Pickups</div>
         <div class="kpi-value">${team.pickups.toLocaleString()}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Pickups ÷ Dials (both Airtable EOD self-reported)">
         <div class="kpi-label">Pickup Rate</div>
         <div class="kpi-value">${fmtPct(team.pickupRate)}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Self-reported — Airtable EOD (setter)">
         <div class="kpi-label">Phone Sets</div>
         <div class="kpi-value">${team.phoneSets.toLocaleString()}</div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card" title="Self-reported — Airtable EOD (setter)">
         <div class="kpi-label">DM Sets</div>
         <div class="kpi-value">${team.dmSets.toLocaleString()}</div>
       </div>
