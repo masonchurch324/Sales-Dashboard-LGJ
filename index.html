@@ -834,11 +834,11 @@ function render() {
       <thead>
         <tr>
           <th>Rep</th>
-          <th class="${thClass('mDials')}" data-sort="mDials">Dials</th>
-          <th class="${thClass('mC2')}" data-sort="mC2">Convos &gt;2m</th>
-          <th class="${thClass('phoneSets')}" data-sort="phoneSets">Phone Sets</th>
-          <th class="${thClass('dmSets')}" data-sort="dmSets">DM Sets</th>
-          <th class="${thClass('mSecs')}" data-sort="mSecs">Talk Time</th>
+          <th class="${thClass('mDials')}" data-sort="mDials" title="Measured — outbound calls from the WAVV (Wave) + GHL dialers combined for the date range; WAVV automatic voicemail-retry legs excluded. Not self-reported.">Dials</th>
+          <th class="${thClass('mC2')}" data-sort="mC2" title="Measured — dialer calls lasting ≥ 120 seconds (same definition on WAVV and GHL)">Convos &gt;2m</th>
+          <th class="${thClass('phoneSets')}" data-sort="phoneSets" title="Self-reported — Airtable EOD. Systemized source pending the attribution app write-back.">Phone Sets</th>
+          <th class="${thClass('dmSets')}" data-sort="dmSets" title="Self-reported — Airtable EOD. Systemized source pending the attribution app write-back.">DM Sets</th>
+          <th class="${thClass('mSecs')}" data-sort="mSecs" title="Measured — sum of connected-call durations (answer to hangup), WAVV + GHL combined">Talk Time</th>
         </tr>
       </thead>
       <tbody>${outboundRows}</tbody>
