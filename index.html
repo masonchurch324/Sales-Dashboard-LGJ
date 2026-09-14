@@ -855,15 +855,15 @@ function render() {
       <thead>
         <tr>
           <th>Rep</th>
-          <th class="${thClass('slotsOpen')}" data-sort="slotsOpen">Slots (AT)</th>
-          <th class="${thClass('scheduled')}" data-sort="scheduled">Scheduled (AT)</th>
-          <th class="${thClass('live')}" data-sort="live">Live (AT)</th>
-          <th class="${thClass('offersMade')}" data-sort="offersMade">Offers (AT)</th>
-          <th class="${thClass('sheetUnits')}" data-sort="sheetUnits">Units (GS)</th>
-          <th class="${thClass('sheetContract')}" data-sort="sheetContract">Contract $ (GS)</th>
-          <th class="${thClass('sheetNewCash')}" data-sort="sheetNewCash">New Cash (GS)</th>
-          <th class="${thClass('sheetCash')}" data-sort="sheetCash">Total Cash (GS)</th>
-          <th class="${thClass('sheetRevPerCall')}" data-sort="sheetRevPerCall">Revenue / Call</th>
+          <th class="${thClass('slotsOpen')}" data-sort="slotsOpen" title="Slots Open — self-reported by the rep in their Airtable EOD">Slots (AT)</th>
+          <th class="${thClass('scheduled')}" data-sort="scheduled" title="Scheduled Calls — self-reported by the rep in their Airtable EOD">Scheduled (AT)</th>
+          <th class="${thClass('live')}" data-sort="live" title="Live Calls held — self-reported by the rep in their Airtable EOD">Live (AT)</th>
+          <th class="${thClass('offersMade')}" data-sort="offersMade" title="Offers Made — self-reported by the rep in their Airtable EOD">Offers (AT)</th>
+          <th class="${thClass('sheetUnits')}" data-sort="sheetUnits" title="Units Sold — Sales Tracking Google Sheet (new sales only; payment plans and duplicate deposit rows excluded)">Units (GS)</th>
+          <th class="${thClass('sheetContract')}" data-sort="sheetContract" title="Contract Value — Sales Tracking Google Sheet (col M on new sales, deposit rows deduped)">Contract $ (GS)</th>
+          <th class="${thClass('sheetNewCash')}" data-sort="sheetNewCash" title="Upfront cash collected — Sales Tracking Google Sheet (non-payment-plan rows, deposits included)">New Cash (GS)</th>
+          <th class="${thClass('sheetCash')}" data-sort="sheetCash" title="All cash collected — Sales Tracking Google Sheet (including payment-plan installments)">Total Cash (GS)</th>
+          <th class="${thClass('sheetRevPerCall')}" data-sort="sheetRevPerCall" title="Contract $ (Google Sheet) ÷ Scheduled Calls (Airtable EOD)">Revenue / Call</th>
         </tr>
       </thead>
       <tbody>${closingRows}</tbody>
