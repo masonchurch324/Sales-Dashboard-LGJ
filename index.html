@@ -797,7 +797,12 @@ function render() {
   }
 
   // Split into two stacked boards (Mason: no more sideways scrolling).
-  const outboundRows = outboundSorted.filter(r => (r.mDials || r.phoneSets || r.dmSets)).map(r => `
+  const dialerDates = (typeof DIALER_DAILY !== 'undefined' ? DIALER_DAILY.map(x => x.d) : []).sort();
+  const dialerStart = dialerDates[0] || null;
+  const outboundCoverageNote = (dialerStart && fmtDate(currentRange.start) < dialerStart)
+    ? `<div style="background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.4);border-radius:6px;padding:8px 12px;margin:0 0 10px;font-size:12px;color:rgba(255,200,90,1)">Measured columns (Dials, Convos, Talk Time) begin <strong>${dialerStart}</strong> — earlier dials aren't captured (Dialer IO not yet integrated). Phone/DM Sets cover the full selected range.</div>`
+    : '';
+  const outboundRows = outboundSorted.filter(r => (r.mDials || r.phoneSets || r.dmSets) && r.rep !== 'Jonathan Walker').map(r => `
     <tr>
       <td class="rep-name">${r.rep}</td>
       <td>${(r.mDials || 0).toLocaleString()}</td>
@@ -830,6 +835,7 @@ function render() {
   const totalRowStyle = 'border-top:2px solid var(--border,#2a2a2a);background:rgba(255,255,255,0.03);font-weight:600;';
   const tableHtml = `
     <div class="section-title">Outbound Stats <span style="font-weight:400;font-size:11px;color:var(--text-dim);text-transform:none;letter-spacing:0">— Dials, Convos &gt;2m (≥120s) and Talk Time measured from WAVV + GHL dialers; Phone/DM Sets self-reported (EOD)</span></div>
+    ${outboundCoverageNote}
     <div class="table-wrap"><table>
       <thead>
         <tr>
@@ -2300,6 +2306,14 @@ function renderDialerActivity() {
   const rows = DIALER_DAILY.filter(r =>
     r.d >= startStr && r.d <= endStr && (__dialerSrc === 'both' || r.src === __dialerSrc));
 
+  // Honesty note: dialer telemetry starts when we began pulling it — flag ranges
+  // that start earlier so YTD/all-time views aren't mistaken for full coverage.
+  const allDates = DIALER_DAILY.map(r => r.d).sort();
+  const dataStart = allDates[0] || null;
+  const coverageNote = (dataStart && startStr < dataStart)
+    ? `<div style="background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.4);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:rgba(255,200,90,1)">Dialer data begins <strong>${dataStart}</strong> — dials before that date aren't captured, so this range is partial.</div>`
+    : '';
+
   const tot = { n: 0, pu: 0, c2: 0, s: 0 };
   const byWho = {};
   for (const r of rows) {
@@ -2319,7 +2333,7 @@ function renderDialerActivity() {
       <div style="font-size:11px;color:var(--text-dim);margin-top:1px">${sub || ''}</div>
     </td>`;
   tilesEl.innerHTML = rows.length
-    ? `<table cellpadding="0" cellspacing="6" style="width:100%;border-collapse:separate"><tr>
+    ? coverageNote + `<table cellpadding="0" cellspacing="6" style="width:100%;border-collapse:separate"><tr>
         ${tile('Dials', tot.n.toLocaleString(), '')}
         ${tile('Pickups', tot.pu, `${puRate}% of dials`)}
         ${tile('Convos > 2 min', tot.c2, '')}
