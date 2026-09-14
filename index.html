@@ -758,6 +758,7 @@ function render() {
   const mUsed = new Set();
   for (const r of sorted) {
     r.sheetRevPerCall = r.scheduled ? (r.sheetContract || 0) / r.scheduled : 0;
+    r.sheetAOV = r.sheetUnits ? (r.sheetContract || 0) / r.sheetUnits : 0;
     r.mDials = 0; r.mC2 = 0; r.mSecs = 0;
     const first = (r.rep || '').split(/\s+/)[0].toLowerCase();
     for (const who in mByWho) {
@@ -820,6 +821,7 @@ function render() {
       <td>${fmtCurrency(r.sheetNewCash)}</td>
       <td>${fmtCurrency(r.sheetCash)}</td>
       <td>${fmtCurrency(r.sheetRevPerCall)}</td>
+      <td>${fmtCurrency(r.sheetAOV)}</td>
     </tr>
   `).join('');
 
@@ -864,6 +866,7 @@ function render() {
           <th class="${thClass('sheetNewCash')}" data-sort="sheetNewCash" title="Upfront cash collected — Sales Tracking Google Sheet (non-payment-plan rows, deposits included)">New Cash (GS)</th>
           <th class="${thClass('sheetCash')}" data-sort="sheetCash" title="All cash collected — Sales Tracking Google Sheet (including payment-plan installments)">Total Cash (GS)</th>
           <th class="${thClass('sheetRevPerCall')}" data-sort="sheetRevPerCall" title="Contract $ (Google Sheet) ÷ Scheduled Calls (Airtable EOD)">Revenue / Call</th>
+          <th class="${thClass('sheetAOV')}" data-sort="sheetAOV" title="AOV — Contract Value (Google Sheet) ÷ Units Sold (Google Sheet)">AOV</th>
         </tr>
       </thead>
       <tbody>${closingRows}</tbody>
@@ -879,6 +882,7 @@ function render() {
           <td>${fmtCurrency(team.newCashCollected)}</td>
           <td>${fmtCurrency(team.totalCashCollected)}</td>
           <td>${fmtCurrency(team.scheduled ? team.sheetContract / team.scheduled : 0)}</td>
+          <td>${fmtCurrency(team.sheetUnits ? team.sheetContract / team.sheetUnits : 0)}</td>
         </tr>
       </tfoot>
     </table></div>
