@@ -1241,7 +1241,7 @@ function renderMonthly() {
 const SHEET_ADJUSTMENTS = [
   // Contract-value corrections Mason called on 2026-09-14 — remove each once the sheet row is fixed.
   { d: '2026-09-14', c: 0, pp: false, k: 5000, u: 0, sp: 'ian', e: 'michellebreuer101@gmail.com',
-    adj: true, note: 'Contract correction: row 1305 (Susan Michelle Breuer) should be $7,500, sheet shows $2,500 (+$5,000)' },
+    adj: true, note: 'Contract correction (Mason 9/15): Breuer deal = $8,000 total ($500 deposit 9/11 + $2,500 on 9/14). Sheet rows undercount by $5,000. Proper sheet fix: contract = 8000 on BOTH her Sept rows, then delete this adjustment.' },
 ];
 function applySheetAdjustments() {
   if (typeof SALES_TRACKING === 'undefined') return;
