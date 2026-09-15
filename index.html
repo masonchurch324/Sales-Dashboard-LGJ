@@ -1626,11 +1626,26 @@ function renderPaceChart() {
     const headline = document.getElementById(`paceHeadline-${m.key}`);
     if (!canvas) continue;
 
+    // Deposit dedup (same rule as filterAndAggregate): within the period, a non-PP
+    // row whose (email, contract) has a higher-cash sibling is an installment on a
+    // deal already counted — its contract must not add again. Fixes the pace chart
+    // reading higher than the KPI tile when a deal has multiple payment rows.
+    const periodRows = SALES_TRACKING.filter(r => period.filterFn(r));
+    const maxCashByDeal = new Map();
+    for (const r of periodRows) {
+      if (r.pp || !r.e || !r.k) continue;
+      const dk = `${r.e}::${r.k}`;
+      if ((r.c || 0) > (maxCashByDeal.get(dk) || 0)) maxCashByDeal.set(dk, r.c || 0);
+    }
+    const isDepositRow = r => !r.pp && r.e && r.k
+      && (maxCashByDeal.get(`${r.e}::${r.k}`) || 0) > (r.c || 0);
+
     const daily = new Array(totalDays).fill(0);
-    for (const r of SALES_TRACKING) {
-      if (!period.filterFn(r)) continue;
+    for (const r of periodRows) {
       const idx = period.indexOf(r);
-      if (idx >= 0 && idx < totalDays) daily[idx] += paceDailyAmount(r, m.key);
+      if (idx < 0 || idx >= totalDays) continue;
+      if (m.key === 'contract' && isDepositRow(r)) continue;
+      daily[idx] += paceDailyAmount(r, m.key);
     }
 
     const cumActual = [];
