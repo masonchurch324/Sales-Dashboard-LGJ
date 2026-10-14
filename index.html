@@ -1239,9 +1239,9 @@ function renderMonthly() {
 // SALES_TRACKING row merged in on load AND after every live /api/sheet refresh. Tagged adj:true
 // so they're visible in the All Sales list. Remove an entry once the sheet itself is corrected.
 const SHEET_ADJUSTMENTS = [
-  // Contract-value corrections Mason called on 2026-09-14 — remove each once the sheet row is fixed.
-  { d: '2026-09-14', c: 0, pp: false, k: 5000, u: 0, sp: 'ian', e: 'michellebreuer101@gmail.com',
-    adj: true, note: 'Contract correction (Mason 9/15): Breuer deal = $8,000 total ($500 deposit 9/11 + $2,500 on 9/14). Sheet rows undercount by $5,000. Proper sheet fix: contract = 8000 on BOTH her Sept rows, then delete this adjustment.' },
+  // (empty) — Donavan refund (Aug) and Breuer contract ($7,500 on 9/14 row) were corrected in the
+  // sheet itself, so no manual adjustments are active. Example shape:
+  // { d:'YYYY-MM-DD', c:-3333, pp:true, k:0, u:0, sp:'ian', e:'x@y.com', adj:true, note:'...' }
 ];
 function applySheetAdjustments() {
   if (typeof SALES_TRACKING === 'undefined') return;
